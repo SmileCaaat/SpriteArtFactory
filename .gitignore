@@ -1,0 +1,21 @@
+﻿# Nested git backups (local only)
+.nested-git-backup/
+
+# Large AI runtime / caches (download separately)
+sprite-video-lab-models/venv/
+sprite-video-lab-models/huggingface/
+sprite-video-lab-models/pip-cache/
+sprite-video-lab-models/work/
+sprite-video-lab-models/EZ-CorridorKey/
+
+# Tool runtime
+**/__pycache__/
+**/*.py[cod]
+**/.venv/
+**/node_modules/
+**/.DS_Store
+**/Thumbs.db
+sprite-video-lab/work/
+sprite-video-lab/**/exports/
+XSXB-Frame-Tuner/**/node_modules/
+XSXB-Frame-Tuner/**/.cache/

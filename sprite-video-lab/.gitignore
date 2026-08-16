@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.pyo
+
+.venv/
+venv/
+env/
+
+work/
+.cache/
+outputs/
+
+.DS_Store
+Thumbs.db
+*.lnk
