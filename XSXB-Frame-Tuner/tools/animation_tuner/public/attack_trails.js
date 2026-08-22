@@ -489,6 +489,34 @@
       return this.hooks.projectKind() === "frame_lite";
     }
 
+    _segmentHasFrameSlices(segment) {
+      return Boolean(segment?.frameSlices) && Object.keys(segment.frameSlices).length > 0;
+    }
+
+    _defaultFrameSlicesFromSticks(sticks = []) {
+      const list = Array.isArray(sticks) ? sticks : [];
+      if (list.length < 2) return {};
+      const frames = [...new Set(list.map((stick) => Math.max(0, Math.round(Number(stick.frame) || 0))))]
+        .sort((left, right) => left - right);
+      const result = {};
+      if (frames.length === 1) {
+        result[String(frames[0])] = { enabled: true, tailProgress: 0, headProgress: 1 };
+        return result;
+      }
+      const min = frames[0];
+      const max = frames[frames.length - 1];
+      for (let frame = min; frame <= max; frame += 1) {
+        const progress = (frame - min) / Math.max(1, max - min);
+        result[String(frame)] = {
+          enabled: true,
+          tailProgress: 0,
+          headProgress: Math.max(0.05, Math.min(1, progress)),
+        };
+      }
+      result[String(max)].headProgress = 1;
+      return result;
+    }
+
     contextChanged() {
       this._discardPresetEdit();
       this.staticEditPreview = false;
@@ -518,7 +546,7 @@
       if (this.previewing) return true;
       if (this._usesFrameSlicesOnly()) return false;
       return this.enabled && this.workspaceMode !== "draw" && this._segments().some((segment) => (
-        !segment.frameSlices
+        !this._segmentHasFrameSlices(segment)
         && segment.enabled !== false
         && segment.generated !== false
         && segment.sticks.length >= 2
@@ -569,14 +597,14 @@
         && segment.sticks.length >= 2
         && (frameSlicesOnly
           ? Object.values(segment.frameSlices || {}).some((slice) => slice?.enabled)
-          : (!segment.frameSlices || Object.values(segment.frameSlices).some((slice) => slice?.enabled))));
+          : (!this._segmentHasFrameSlices(segment) || Object.values(segment.frameSlices).some((slice) => slice?.enabled))));
     }
 
     exportTimeRanges() {
       const ranges = [];
       for (const segment of this._segments()) {
         if (segment.enabled === false || segment.generated === false || segment.sticks.length < 2) continue;
-        if (segment.frameSlices) {
+        if (this._segmentHasFrameSlices(segment)) {
           for (const [rawFrame, slice] of Object.entries(segment.frameSlices)) {
             if (!slice?.enabled) continue;
             const frame = Math.max(0, Math.round(Number(rawFrame) || 0));
@@ -786,7 +814,7 @@
       if (!this.workspaceMode && this.hooks.selectedGuidePreviewActive?.() === true) return;
       for (const segment of this._segments()) {
         if (segment.enabled === false || segment.generated === false || segment.sticks.length < 2 || !segment.texture?.path) continue;
-        if (this.workspaceMode === "insert" || segment.frameSlices) {
+        if (this.workspaceMode === "insert" || this._segmentHasFrameSlices(segment)) {
           const slice = segment.frameSlices?.[String(frameIndex)];
           if (slice?.enabled) this._drawSegment(segment, alpha, layer, slice);
         } else {
@@ -3086,6 +3114,12 @@
       const forceFrameSlices = this._usesFrameSlicesOnly() && !presetOnly;
       const materialLayers = normalizeMaterialLayers(value.materialLayers ?? value.material_layers, value);
       const glowStrength = clamp(value.glowStrength ?? value.glow_strength, 0, 3, DEFAULT_GLOW_STRENGTH);
+      const sticks = (Array.isArray(value.sticks) ? value.sticks : []).map((stick, stickIndex) => this._normalizeStick(stick, stickIndex, segmentLayer));
+      let resolvedFrameSlices = frameSlices;
+      if (forceFrameSlices && (!resolvedFrameSlices || !Object.keys(resolvedFrameSlices).length) && sticks.length >= 2) {
+        // Lite previously persisted empty {} which disabled continuous draw and hid trails on reopen.
+        resolvedFrameSlices = this._defaultFrameSlicesFromSticks(sticks);
+      }
       const segment = {
         id: String(value.id || `trail_${index + 1}`), name: normalizeTrailName(value.name, index), profileId: String(value.profileId || profileId), animationId: String(value.animationId || animationId),
         enabled: true, generated: value.generated !== false, presetOnly, coordinateSpace: "group", layer: segmentLayer,
@@ -3117,8 +3151,8 @@
         tailFadeStart: clamp(value.tailFadeStart, 0, 0.95, 0.6),
         headCurvature: clamp(value.headCurvature, -1, 1, 0),
         speedVariation: clamp(value.speedVariation, 0, 0.25, 0.008), stableSeed: Math.round(clamp(value.stableSeed, 0, 2147483647, 73129)), pathColumns: Math.round(clamp(value.pathColumns, 8, 96, DEFAULT_PATH_COLUMNS)), pathCacheSamples: Math.round(clamp(value.pathCacheSamples, 32, 512, 192)), collapsedWidth: clamp(value.collapsedWidth, 0.25, 32, 2),
-        sticks: (Array.isArray(value.sticks) ? value.sticks : []).map((stick, stickIndex) => this._normalizeStick(stick, stickIndex, segmentLayer)),
-        ...(frameSlices || forceFrameSlices ? { frameSlices: frameSlices || {} } : {}),
+        sticks,
+        ...(resolvedFrameSlices || forceFrameSlices ? { frameSlices: resolvedFrameSlices || {} } : {}),
       };
       this._renumberAndAutoPhase(segment);
       this._updateGenerated(segment);

@@ -1,6 +1,6 @@
 @echo off
 setlocal
-chcp 65001 >nul
+chcp 936 >nul
 cd /d "%~dp0"
 title SpriteArtFactory
 
@@ -10,6 +10,8 @@ if /I "%~1"=="lite" goto :lite
 if /I "%~1"=="1" goto :svl
 if /I "%~1"=="2" goto :tuner
 if /I "%~1"=="3" goto :lite
+if /I "%~1"=="q" goto :eof
+if /I "%~1"=="quit" goto :eof
 
 :menu
 cls
@@ -20,10 +22,10 @@ echo.
 echo   1^) Sprite Video Lab   -^> http://127.0.0.1:8894
 echo   2^) XSXB Frame Tuner   -^> http://127.0.0.1:5179
 echo   3^) XSXB Frame Lite    -^> http://127.0.0.1:5180
-echo   Q^) é€€å‡º
+echo   Q^) ÍË³ö
 echo.
 set "CHOICE="
-set /p "CHOICE=è¯·é€‰æ‹© [1/2/3/Q]: "
+set /p "CHOICE=ÇëÑ¡Ôñ [1/2/3/Q]: "
 
 if /I "%CHOICE%"=="1" goto :svl
 if /I "%CHOICE%"=="svl" goto :svl
@@ -36,33 +38,48 @@ if /I "%CHOICE%"=="quit" goto :eof
 if /I "%CHOICE%"=="exit" goto :eof
 
 echo.
-echo æ— æ•ˆé€‰æ‹©ï¼Œè¯·é‡è¯•ã€‚
+echo ÎÞÐ§Ñ¡Ôñ£¬ÇëÖØÊÔ¡£
 timeout /t 2 >nul
 goto :menu
 
 :svl
 echo.
-echo æ­£åœ¨å¯åŠ¨ Sprite Video Lab ...
+echo ÕýÔÚÆô¶¯ Sprite Video Lab ...
+if not exist "%~dp0sprite-video-lab\start_sprite_video_lab_a1.bat" (
+  echo ´íÎó£ºÕÒ²»µ½ sprite-video-lab\start_sprite_video_lab_a1.bat
+  pause
+  goto :menu
+)
 call "%~dp0sprite-video-lab\start_sprite_video_lab_a1.bat"
 echo.
-echo å¯åŠ¨æµç¨‹å·²ç»“æŸã€‚æŒ‰ä»»æ„é”®è¿”å›žèœå•ã€‚
+echo Æô¶¯Á÷³ÌÒÑ½áÊø¡£°´ÈÎÒâ¼ü·µ»Ø²Ëµ¥¡£
 pause >nul
 goto :menu
 
 :tuner
 echo.
-echo æ­£åœ¨å¯åŠ¨ XSXB Frame Tuner ...
+echo ÕýÔÚÆô¶¯ XSXB Frame Tuner ...
+if not exist "%~dp0XSXB-Frame-Tuner\start_xsxb_frame_tuner.bat" (
+  echo ´íÎó£ºÕÒ²»µ½ XSXB-Frame-Tuner\start_xsxb_frame_tuner.bat
+  pause
+  goto :menu
+)
 call "%~dp0XSXB-Frame-Tuner\start_xsxb_frame_tuner.bat"
 echo.
-echo å¯åŠ¨æµç¨‹å·²ç»“æŸã€‚æŒ‰ä»»æ„é”®è¿”å›žèœå•ã€‚
+echo Æô¶¯Á÷³ÌÒÑ½áÊø¡£°´ÈÎÒâ¼ü·µ»Ø²Ëµ¥¡£
 pause >nul
 goto :menu
 
 :lite
 echo.
-echo æ­£åœ¨å¯åŠ¨ XSXB Frame Lite ...
+echo ÕýÔÚÆô¶¯ XSXB Frame Lite ...
+if not exist "%~dp0XSXB-Frame-Tuner\start_xsxb_frame_tuner_lite.bat" (
+  echo ´íÎó£ºÕÒ²»µ½ XSXB-Frame-Tuner\start_xsxb_frame_tuner_lite.bat
+  pause
+  goto :menu
+)
 call "%~dp0XSXB-Frame-Tuner\start_xsxb_frame_tuner_lite.bat"
 echo.
-echo å¯åŠ¨æµç¨‹å·²ç»“æŸã€‚æŒ‰ä»»æ„é”®è¿”å›žèœå•ã€‚
+echo Æô¶¯Á÷³ÌÒÑ½áÊø¡£°´ÈÎÒâ¼ü·µ»Ø²Ëµ¥¡£
 pause >nul
 goto :menu

@@ -1,10 +1,162 @@
 (function frameTunerLiteUi() {
-  const state = { exporting: false, initialized: false, layout: null };
+  const state = {
+    exporting: false,
+    initialized: false,
+    importInitialized: false,
+    layout: null,
+    importing: false,
+    deleting: false,
+    pendingFrames: [],
+    pendingSheetPng: null,
+    pendingSheetJson: null,
+  };
 
   const number = (value, min, max, fallback) => {
     const result = Number(value);
     return Number.isFinite(result) ? Math.min(max, Math.max(min, result)) : fallback;
   };
+
+  function slugId(value, fallback = "material_set") {
+    const text = String(value || "").trim()
+      .replace(/[<>:"/\\|?*\x00-\x1F]/g, "_")
+      .replace(/\s+/g, "_")
+      .replace(/\.\./g, "_")
+      .replace(/^_+|_+$/g, "");
+    return text && !/^\.+$/.test(text) ? text : fallback;
+  }
+
+  const ANIMATION_PRESET_GROUPS = {
+    character: [
+      { id: "idle", hint: "站立循环，角色基础姿态。" },
+      { id: "run", hint: "奔跑循环，用于移动。" },
+      { id: "walk", hint: "行走循环，比 run 更慢。" },
+      { id: "attack1", hint: "第一段攻击动作，可再追加 attack2 等。" },
+      { id: "attack2", hint: "第二段攻击或连招。" },
+      { id: "hurt", hint: "受击反馈。" },
+      { id: "death", hint: "死亡动画。" },
+      { id: "dance", hint: "展示、舞蹈或特殊待机。" },
+    ],
+    skill: [
+      { id: "cast", hint: "施法前摇：抬手、读条或出手。" },
+      { id: "channel", hint: "持续施法或引导过程。" },
+      { id: "projectile", hint: "弹道、飞行物本体。" },
+      { id: "impact", hint: "命中、爆炸或落地效果。" },
+      { id: "loop", hint: "持续存在的循环特效。" },
+      { id: "spawn", hint: "生成、出现或落地瞬间。" },
+    ],
+    vfx: [
+      { id: "cast_vfx", hint: "附着在施法序列上的光效层。" },
+      { id: "slash_vfx", hint: "刀光、挥砍轨迹等攻击特效。" },
+      { id: "hit_vfx", hint: "命中火花、打击反馈。" },
+      { id: "trail_vfx", hint: "拖尾、残影类特效层。" },
+    ],
+    custom: [
+      { id: "__custom__", hint: "在下方输入自己的序列 ID（英文、数字、下划线）。" },
+    ],
+  };
+
+  function animationPresetLabel(id) {
+    const labels = {
+      idle: "idle — 待机",
+      run: "run — 奔跑",
+      walk: "walk — 行走",
+      attack1: "attack1 — 攻击 1",
+      attack2: "attack2 — 攻击 2",
+      hurt: "hurt — 受击",
+      death: "death — 死亡",
+      dance: "dance — 展示/舞蹈",
+      cast: "cast — 施法",
+      channel: "channel — 引导",
+      projectile: "projectile — 弹道",
+      impact: "impact — 命中/爆炸",
+      loop: "loop — 持续循环",
+      spawn: "spawn — 生成/出现",
+      cast_vfx: "cast_vfx — 施法特效",
+      slash_vfx: "slash_vfx — 刀光",
+      hit_vfx: "hit_vfx — 命中特效",
+      trail_vfx: "trail_vfx — 拖尾特效",
+      __custom__: "自定义…",
+    };
+    return labels[id] || id;
+  }
+
+  function animationPresetsForKind(kind) {
+    if (kind === "vfx_layer") return [...ANIMATION_PRESET_GROUPS.vfx, ...ANIMATION_PRESET_GROUPS.custom];
+    if (kind === "new_character") return [...ANIMATION_PRESET_GROUPS.character, ...ANIMATION_PRESET_GROUPS.custom];
+    return [...ANIMATION_PRESET_GROUPS.skill, ...ANIMATION_PRESET_GROUPS.character, ...ANIMATION_PRESET_GROUPS.custom];
+  }
+
+  function importMarkup() {
+    return `
+      <details id="liteImportPanel" class="panel liteImportPanel" open>
+        <summary><h2>导入素材</h2></summary>
+        <div class="liteImportBody">
+          <label class="field">
+            <span>导入方式</span>
+            <select id="liteImportKind">
+              <option value="new_skill">新建技能包素材集（可含多个技能序列）</option>
+              <option value="new_character">新建角色素材集</option>
+              <option value="sequence">向当前素材集追加序列</option>
+              <option value="vfx_layer">向当前素材集追加附着特效</option>
+            </select>
+          </label>
+          <div id="liteImportProfileFields" class="liteImportProfileFields">
+            <label class="field"><span>素材集名称</span><input id="liteImportProfileLabel" type="text" placeholder="如 Neeko Spell1" autocomplete="off" /></label>
+            <label class="field"><span>素材集 ID</span><input id="liteImportProfileId" type="text" placeholder="自动根据名称生成" autocomplete="off" /></label>
+          </div>
+          <div id="liteImportCurrentProfile" class="liteImportHint" hidden></div>
+          <div class="liteImportSequenceField">
+            <label class="field">
+              <span>序列类型</span>
+              <select id="liteImportAnimationPreset"></select>
+            </label>
+            <p id="liteImportAnimationHint" class="liteImportSequenceHint">序列是一组按顺序播放的 PNG 帧；ID 用于导出文件夹名和后续引用。</p>
+            <label class="field liteImportAnimationCustomField" id="liteImportAnimationCustomField">
+              <span>序列 ID</span>
+              <input id="liteImportAnimationId" type="text" placeholder="自定义，如 spell_q 或 neeko_r" autocomplete="off" />
+            </label>
+          </div>
+          <label class="number liteImportFpsField"><span>帧率 FPS</span><input id="liteImportFps" type="number" min="1" max="240" step="0.1" value="12" /></label>
+          <div id="liteImportAttachFields" class="liteImportAttachFields" hidden>
+            <label class="field"><span>附着到序列</span><select id="liteImportAttachTo"></select></label>
+            <label class="field"><span>图层</span><select id="liteImportLayer"><option value="front">前景</option><option value="behind">背景</option></select></label>
+          </div>
+          <label class="field">
+            <span>来源格式</span>
+            <select id="liteImportSource">
+              <option value="frames">PNG 文件夹</option>
+              <option value="sheet">Sheet + JSON</option>
+            </select>
+          </label>
+          <div class="liteImportPickRow">
+            <button id="liteImportPickFrames" type="button" class="secondary">选择 PNG 文件夹</button>
+            <button id="liteImportPickSheet" type="button" class="secondary" hidden>选择 Sheet + JSON</button>
+          </div>
+          <input id="liteImportFramesInput" type="file" accept="image/png,.png" webkitdirectory multiple hidden />
+          <input id="liteImportSheetPngInput" type="file" accept="image/png,.png" hidden />
+          <input id="liteImportSheetJsonInput" type="file" accept="application/json,.json" hidden />
+          <div id="liteImportSelection" class="liteImportSelection">尚未选择文件</div>
+          <button id="liteImportSubmit" type="button" class="liteImportButton">开始导入</button>
+          <div id="liteImportStatus" class="liteImportStatus" aria-live="polite">选择素材后点击导入</div>
+        </div>
+      </details>`;
+  }
+
+  function manageMarkup() {
+    return `
+      <details id="liteManagePanel" class="panel liteManagePanel">
+        <summary><h2>管理素材</h2></summary>
+        <div class="liteManageBody">
+          <div id="liteManageContext" class="liteManageContext">请选择一个素材集和序列。</div>
+          <p class="liteManageHelp">删除会移除 PNG、调参、音效与拖尾绑定，且不可恢复。删除主序列时，默认会一并删除其附着特效层。</p>
+          <div class="liteManageActions">
+            <button id="liteDeleteAnimation" type="button" class="liteDangerButton" disabled>删除当前序列</button>
+            <button id="liteDeleteProfile" type="button" class="liteDangerButton" disabled>删除当前素材集</button>
+          </div>
+          <div id="liteManageStatus" class="liteManageStatus" aria-live="polite">选择后可删除</div>
+        </div>
+      </details>`;
+  }
 
   function markup() {
     return `
@@ -27,10 +179,424 @@
       </details>`;
   }
 
+  function initializeImport() {
+    if (state.importInitialized) return;
+    const grid = document.querySelector(".characterGroupGrid");
+    if (!grid) return;
+    grid.insertAdjacentHTML("afterend", importMarkup() + manageMarkup());
+    const framesInput = input("liteImportFramesInput");
+    const sheetPngInput = input("liteImportSheetPngInput");
+    const sheetJsonInput = input("liteImportSheetJsonInput");
+    input("liteImportKind").addEventListener("change", () => {
+      renderAnimationPresetSelect();
+      syncImportForm();
+    });
+    input("liteImportSource").addEventListener("change", syncImportForm);
+    input("liteImportProfileLabel").addEventListener("input", syncProfileIdFromLabel);
+    input("liteImportAnimationPreset").addEventListener("change", applyAnimationPresetSelection);
+    input("liteImportAnimationId").addEventListener("input", syncAnimationPresetFromInput);
+    input("liteImportPickFrames").addEventListener("click", () => framesInput.click());
+    input("liteImportPickSheet").addEventListener("click", () => sheetPngInput.click());
+    framesInput.addEventListener("change", () => {
+      state.pendingFrames = [...framesInput.files || []].filter((file) => /\.png$/i.test(file.name));
+      state.pendingSheetPng = null;
+      state.pendingSheetJson = null;
+      renderImportSelection();
+    });
+    sheetPngInput.addEventListener("change", () => {
+      const file = sheetPngInput.files?.[0];
+      if (!file) return;
+      state.pendingSheetPng = file;
+      sheetJsonInput.value = "";
+      sheetJsonInput.click();
+    });
+    sheetJsonInput.addEventListener("change", async () => {
+      const file = sheetJsonInput.files?.[0];
+      if (!file || !state.pendingSheetPng) return;
+      try {
+        state.pendingSheetJson = JSON.parse(await file.text());
+        state.pendingFrames = [];
+        renderImportSelection();
+      } catch (error) {
+        state.pendingSheetJson = null;
+        setImportStatus(`JSON 解析失败：${error.message}`);
+      }
+    });
+    input("liteImportSubmit").addEventListener("click", () => submitImport().catch((error) => setImportStatus(error.message)));
+    input("liteDeleteAnimation").addEventListener("click", () => deleteCurrentAnimation().catch((error) => setManageStatus(error.message)));
+    input("liteDeleteProfile").addEventListener("click", () => deleteCurrentProfile().catch((error) => setManageStatus(error.message)));
+    state.importInitialized = true;
+    renderAnimationPresetSelect();
+    syncImportForm();
+    syncDeletePanel();
+  }
+
+  function setManageStatus(message) {
+    const node = input("liteManageStatus");
+    if (node) node.textContent = message;
+  }
+
+  function syncDeletePanel() {
+    if (!state.importInitialized) return;
+    const current = window.XsxbFrameTunerLite?.current?.() || {};
+    const profileId = currentProfileSelection() || current.profileId || "";
+    const profileLabel = current.profileLabel || profileId;
+    const animationId = current.animationId || "";
+    const animationName = current.animationName || animationId;
+    const context = input("liteManageContext");
+    const deleteAnimation = input("liteDeleteAnimation");
+    const deleteProfile = input("liteDeleteProfile");
+    if (context) {
+      context.textContent = profileId && animationId
+        ? `当前：${profileLabel} / ${animationName}（${profileId}/${animationId}）`
+        : profileId
+          ? `当前素材集：${profileLabel}（${profileId}），请再选择一个序列。`
+          : "请在上方选择具体素材集（不要选“全部”），并选中要删除的序列。";
+    }
+    if (deleteAnimation) deleteAnimation.disabled = !current.projectId || !profileId || !animationId || state.importing || state.deleting;
+    if (deleteProfile) deleteProfile.disabled = !current.projectId || !profileId || state.importing || state.deleting;
+  }
+
+  async function postDelete(url, payload) {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      let message = await response.text();
+      try {
+        const parsed = JSON.parse(message);
+        message = parsed.error || message;
+      } catch {
+        // keep raw
+      }
+      throw new Error(message || "删除失败。");
+    }
+    return response.json();
+  }
+
+  async function deleteCurrentAnimation() {
+    const current = window.XsxbFrameTunerLite?.current?.();
+    const profileId = currentProfileSelection() || current?.profileId;
+    const animationId = current?.animationId;
+    if (!current?.projectId || !profileId || !animationId) throw new Error("请先选择要删除的序列。");
+    const label = `${profileId}/${animationId}`;
+    if (!window.confirm(`确定删除序列 ${label}？\nPNG、调参与音效绑定将一并移除，且不可恢复。\n附着在该序列上的特效层也会默认删除。`)) return;
+    state.deleting = true;
+    syncDeletePanel();
+    setManageStatus("正在删除序列…");
+    try {
+      const result = await postDelete("/api/lite/delete-animation", {
+        projectId: current.projectId,
+        profileId,
+        animationId,
+        deleteAttached: true,
+      });
+      const removed = result.deleted?.removedAnimations || [animationId];
+      setManageStatus(`已删除序列：${removed.join("、")}`);
+      window.dispatchEvent(new CustomEvent("xsxb-lite-imported", {
+        detail: {
+          profileId,
+          message: `已删除序列 ${label}`,
+        },
+      }));
+    } finally {
+      state.deleting = false;
+      syncDeletePanel();
+    }
+  }
+
+  async function deleteCurrentProfile() {
+    const current = window.XsxbFrameTunerLite?.current?.();
+    const profileId = currentProfileSelection() || current?.profileId;
+    const profileLabel = current?.profileLabel || profileId;
+    if (!current?.projectId || !profileId) throw new Error("请先选择要删除的素材集。");
+    const typed = window.prompt(`将删除整个素材集「${profileLabel}」及其全部序列。\n此操作不可恢复。\n请输入素材集 ID 以确认：${profileId}`);
+    if (typed === null) return;
+    if (slugId(typed, "") !== profileId) throw new Error("确认 ID 不匹配，已取消删除。");
+    state.deleting = true;
+    syncDeletePanel();
+    setManageStatus("正在删除素材集…");
+    try {
+      const result = await postDelete("/api/lite/delete-profile", {
+        projectId: current.projectId,
+        profileId,
+      });
+      const count = (result.deleted?.removedAnimations || []).length;
+      setManageStatus(`已删除素材集 ${profileLabel}（${count} 条序列）`);
+      window.dispatchEvent(new CustomEvent("xsxb-lite-imported", {
+        detail: {
+          profileId: "all",
+          message: `已删除素材集 ${profileLabel}`,
+        },
+      }));
+    } finally {
+      state.deleting = false;
+      syncDeletePanel();
+    }
+  }
+
+  function renderAnimationPresetSelect() {
+    const select = input("liteImportAnimationPreset");
+    if (!select) return;
+    const kind = input("liteImportKind")?.value || "new_skill";
+    const presets = animationPresetsForKind(kind);
+    const currentId = slugId(input("liteImportAnimationId")?.value, "");
+    select.innerHTML = presets.map((preset) => (
+      `<option value="${escapeHtml(preset.id)}">${escapeHtml(animationPresetLabel(preset.id))}</option>`
+    )).join("");
+    const matched = presets.find((preset) => preset.id === currentId);
+    if (matched) {
+      select.value = matched.id;
+      updateAnimationHint(matched.id, presets);
+    } else if (currentId) {
+      select.value = "__custom__";
+      updateAnimationHint("__custom__", presets);
+    } else {
+      const defaultId = presets[0]?.id || "__custom__";
+      select.value = defaultId;
+      if (defaultId !== "__custom__") input("liteImportAnimationId").value = defaultId;
+      updateAnimationHint(defaultId, presets);
+    }
+    syncAnimationCustomField();
+  }
+
+  function updateAnimationHint(presetId, presets = null) {
+    const hint = input("liteImportAnimationHint");
+    if (!hint) return;
+    const list = presets || animationPresetsForKind(input("liteImportKind")?.value || "new_skill");
+    const preset = list.find((entry) => entry.id === presetId);
+    hint.textContent = preset?.hint || "在下方填写或修改序列 ID。";
+  }
+
+  function syncAnimationCustomField() {
+    const field = document.getElementById("liteImportAnimationCustomField");
+    const preset = input("liteImportAnimationPreset")?.value || "";
+    if (field) field.classList.toggle("is-emphasized", preset === "__custom__");
+  }
+
+  function applyAnimationPresetSelection() {
+    const presetId = input("liteImportAnimationPreset")?.value || "__custom__";
+    updateAnimationHint(presetId);
+    syncAnimationCustomField();
+    if (presetId === "__custom__") {
+      input("liteImportAnimationId")?.focus();
+      return;
+    }
+    input("liteImportAnimationId").value = presetId;
+  }
+
+  function syncAnimationPresetFromInput() {
+    const value = slugId(input("liteImportAnimationId")?.value, "");
+    const presets = animationPresetsForKind(input("liteImportKind")?.value || "new_skill");
+    const select = input("liteImportAnimationPreset");
+    const matched = presets.find((preset) => preset.id === value);
+    if (matched) {
+      select.value = matched.id;
+      updateAnimationHint(matched.id, presets);
+    } else {
+      select.value = "__custom__";
+      updateAnimationHint("__custom__", presets);
+    }
+    syncAnimationCustomField();
+  }
+
+  function setImportStatus(message) {
+    const node = input("liteImportStatus");
+    if (node) node.textContent = message;
+  }
+
+  function currentProfileSelection() {
+    const value = document.querySelector("#profileSelect")?.value || "";
+    return value && value !== "all" ? value : "";
+  }
+
+  function syncProfileIdFromLabel() {
+    const labelInput = input("liteImportProfileLabel");
+    const idInput = input("liteImportProfileId");
+    if (!labelInput || !idInput || idInput.dataset.manual === "1") return;
+    idInput.value = slugId(labelInput.value, "");
+  }
+
+  function renderImportSelection() {
+    const node = input("liteImportSelection");
+    if (!node) return;
+    if (state.pendingFrames.length) {
+      node.textContent = `已选 ${state.pendingFrames.length} 张 PNG`;
+      return;
+    }
+    if (state.pendingSheetPng && state.pendingSheetJson) {
+      node.textContent = `已选 Sheet：${state.pendingSheetPng.name} + JSON`;
+      return;
+    }
+    node.textContent = "尚未选择文件";
+  }
+
+  function syncImportForm() {
+    if (!state.importInitialized) return;
+    const kind = input("liteImportKind")?.value || "new_skill";
+    const source = input("liteImportSource")?.value || "frames";
+    const profileId = currentProfileSelection();
+    const profileFields = input("liteImportProfileFields");
+    const currentProfile = input("liteImportCurrentProfile");
+    const attachFields = input("liteImportAttachFields");
+    const pickFrames = input("liteImportPickFrames");
+    const pickSheet = input("liteImportPickSheet");
+    const submit = input("liteImportSubmit");
+    const needsNewProfile = kind === "new_character" || kind === "new_skill";
+    const needsCurrentProfile = kind === "sequence" || kind === "vfx_layer";
+    if (profileFields) profileFields.hidden = !needsNewProfile;
+    if (currentProfile) {
+      currentProfile.hidden = !needsCurrentProfile;
+      currentProfile.textContent = profileId
+        ? `将导入到当前素材集：${profileId}`
+        : "请先在上方选择一个素材集，或改为新建素材集。";
+    }
+    if (attachFields) attachFields.hidden = kind !== "vfx_layer";
+    if (pickFrames) pickFrames.hidden = source !== "frames";
+    if (pickSheet) pickSheet.hidden = source !== "sheet";
+    if (kind === "vfx_layer") populateAttachToSelect(profileId);
+    const blocked = needsCurrentProfile && !profileId;
+    if (submit) submit.disabled = blocked || state.importing;
+    if (blocked) setImportStatus("请先选择素材集，或改为新建角色/技能素材集。");
+    else if (!state.importing) setImportStatus("选择素材后点击导入");
+  }
+
+  function populateAttachToSelect(profileId) {
+    const select = input("liteImportAttachTo");
+    if (!select) return;
+    const groups = window.XsxbFrameTunerLite?.profileActorGroups?.(profileId) || [];
+    select.innerHTML = groups.length
+      ? groups.map((group) => `<option value="${escapeHtml(group.animationId)}">${escapeHtml(group.name)}</option>`).join("")
+      : "<option value=\"\">当前素材集没有可附着的主序列</option>";
+    select.disabled = !groups.length;
+  }
+
+  function escapeHtml(value) {
+    return String(value || "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;");
+  }
+
+  async function readFileDataUrl(file) {
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error(`无法读取文件：${file.name}`));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function resolveImportTarget() {
+    const kind = input("liteImportKind")?.value || "new_skill";
+    const animationId = slugId(input("liteImportAnimationId")?.value, "");
+    if (!animationId) throw new Error("请填写序列 ID。");
+    const fps = number(input("liteImportFps")?.value, 0.1, 240, 12);
+    if (kind === "new_character" || kind === "new_skill") {
+      const profileLabel = String(input("liteImportProfileLabel")?.value || "").trim();
+      const profileId = slugId(input("liteImportProfileId")?.value || profileLabel, "material_set");
+      if (!profileLabel) throw new Error("请填写素材集名称。");
+      return {
+        profileId,
+        profileLabel,
+        animationId,
+        fps,
+        attachTo: "",
+        layer: "front",
+      };
+    }
+    const profileId = currentProfileSelection();
+    if (!profileId) throw new Error("请先选择素材集。");
+    const profiles = window.XsxbFrameTunerLite?.profiles?.() || [];
+    const profileLabel = profiles.find((entry) => entry.id === profileId)?.label || profileId;
+    if (kind === "vfx_layer") {
+      const attachTo = String(input("liteImportAttachTo")?.value || "").trim();
+      if (!attachTo) throw new Error("请选择要附着的主序列。");
+      return {
+        profileId,
+        profileLabel,
+        animationId,
+        fps,
+        attachTo,
+        layer: input("liteImportLayer")?.value || "front",
+      };
+    }
+    return { profileId, profileLabel, animationId, fps, attachTo: "", layer: "front" };
+  }
+
+  async function submitImport() {
+    if (state.importing) return;
+    const api = window.XsxbFrameTunerLite;
+    const current = api?.current();
+    if (!current?.projectId) throw new Error("未选择 Lite 项目。");
+    const source = input("liteImportSource")?.value || "frames";
+    const target = resolveImportTarget();
+    if (source === "frames" && !state.pendingFrames.length) throw new Error("请先选择 PNG 文件夹。");
+    if (source === "sheet" && (!state.pendingSheetPng || !state.pendingSheetJson)) throw new Error("请先选择 Sheet PNG 和 JSON。");
+    state.importing = true;
+    input("liteImportSubmit").disabled = true;
+    setImportStatus("正在读取并上传素材…");
+    try {
+      const payload = {
+        projectId: current.projectId,
+        source,
+        ...target,
+      };
+      if (source === "frames") {
+        payload.frames = await Promise.all(state.pendingFrames.map(async (file) => ({
+          name: file.name,
+          data: await readFileDataUrl(file),
+        })));
+      } else {
+        payload.sheetData = await readFileDataUrl(state.pendingSheetPng);
+        payload.json = state.pendingSheetJson;
+      }
+      const response = await fetch("/api/lite/import-animation", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        let message = await response.text();
+        try {
+          const parsed = JSON.parse(message);
+          message = parsed.error || message;
+        } catch {
+          // keep raw text
+        }
+        throw new Error(message || "导入失败。");
+      }
+      const result = await response.json();
+      const imported = result.imported || {};
+      state.pendingFrames = [];
+      state.pendingSheetPng = null;
+      state.pendingSheetJson = null;
+      input("liteImportFramesInput").value = "";
+      input("liteImportSheetPngInput").value = "";
+      input("liteImportSheetJsonInput").value = "";
+      renderImportSelection();
+      setImportStatus(`导入完成：${imported.profileLabel || imported.profileId}/${imported.animationId}（${imported.frames} 帧）`);
+      window.dispatchEvent(new CustomEvent("xsxb-lite-imported", {
+        detail: {
+          profileId: imported.profileId,
+          animationId: imported.animationId,
+          message: `已导入 ${imported.profileLabel || imported.profileId} / ${imported.animationId}`,
+        },
+      }));
+    } finally {
+      state.importing = false;
+      syncImportForm();
+    }
+  }
+
   function initialize() {
     if (state.initialized) return;
     const save = document.querySelector("#save");
     if (!save) return;
+    initializeImport();
     save.insertAdjacentHTML("beforebegin", markup());
     document.querySelector("#liteExportSequence").addEventListener("click", () => exportOutput("sequence"));
     document.querySelector("#liteExportSheet").addEventListener("click", () => exportOutput("sheet"));
@@ -468,7 +1034,9 @@
     initialize();
     applyLiteLabels();
     syncSettings();
+    syncImportForm();
+    syncDeletePanel();
   });
   initialize();
-  setTimeout(() => { applyLiteLabels(); syncSettings(); }, 500);
+  setTimeout(() => { applyLiteLabels(); syncSettings(); syncImportForm(); syncDeletePanel(); }, 500);
 })();

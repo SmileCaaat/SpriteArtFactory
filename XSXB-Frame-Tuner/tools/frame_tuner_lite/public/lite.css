@@ -10,6 +10,131 @@ body.frameTunerLite .brand .mark {
   border-top-color: var(--accent-2);
 }
 
+.liteManagePanel {
+  border-top-color: color-mix(in srgb, var(--danger, #c0392b) 55%, var(--line));
+}
+
+.liteManageBody {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.liteManageHelp {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.liteManageContext,
+.liteManageStatus {
+  min-height: 34px;
+  padding: 8px 9px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel) 82%, transparent);
+  color: var(--muted);
+  font: 700 11px/1.45 var(--data-font);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.liteManageActions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.liteDangerButton {
+  width: 100%;
+  background: color-mix(in srgb, #c0392b 88%, #000 12%);
+  color: #fff;
+  font-size: 12px;
+}
+
+.liteDangerButton:disabled {
+  opacity: 0.45;
+}
+
+@media (max-width: 440px) {
+  .liteManageActions { grid-template-columns: 1fr; }
+}
+
+.liteImportPanel {
+  border-top-color: var(--accent);
+}
+
+.liteImportBody {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.liteImportProfileFields,
+.liteImportAttachFields {
+  display: grid;
+  gap: 8px;
+}
+
+.liteImportFpsField {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 5px;
+  margin: 0;
+}
+
+.liteImportSequenceField {
+  display: grid;
+  gap: 8px;
+}
+
+.liteImportSequenceHint {
+  margin: 0;
+  padding: 8px 9px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel) 88%, var(--accent) 12%);
+  color: var(--muted);
+  font: 600 11px/1.5 var(--data-font);
+}
+
+.liteImportAnimationCustomField.is-emphasized input {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  background: color-mix(in srgb, var(--panel) 78%, var(--accent) 22%);
+}
+
+.liteImportHint,
+.liteImportSelection,
+.liteImportStatus {
+  min-height: 34px;
+  padding: 8px 9px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel) 82%, transparent);
+  color: var(--muted);
+  font: 700 11px/1.45 var(--data-font);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.liteImportPickRow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.liteImportButton {
+  width: 100%;
+  background: var(--accent);
+  color: var(--on-bright);
+  font-size: 12px;
+}
+
+@media (max-width: 440px) {
+  .liteImportPickRow { grid-template-columns: 1fr; }
+}
+
+.liteExportPanel {
+  border-top-color: var(--accent-2);
+}
+
 .liteExportBody {
   display: grid;
   gap: 10px;

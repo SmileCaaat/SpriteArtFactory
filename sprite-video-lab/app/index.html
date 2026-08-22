@@ -779,6 +779,32 @@
                     </div>
                   </div>
 
+                  <div class="batch-edit-section">
+                    <label class="checkbox-row compact">
+                      <input id="batchFeatherEnabledInput" type="checkbox">
+                      <span>羽化遮罩</span>
+                    </label>
+                    <div id="batchFeatherShapeButtons" class="choice-button-row">
+                      <button class="choice-button compact is-selected" type="button" data-batch-feather-shape="ellipse" aria-pressed="true">椭圆</button>
+                      <button class="choice-button compact" type="button" data-batch-feather-shape="circle" aria-pressed="false">圆</button>
+                      <button class="choice-button compact" type="button" data-batch-feather-shape="rect" aria-pressed="false">矩形</button>
+                      <button class="choice-button compact" type="button" data-batch-feather-shape="lasso" aria-pressed="false">套索</button>
+                    </div>
+                    <div class="batch-edit-fields">
+                      <label class="field compact wide">
+                        <span>羽化宽度 <strong id="batchFeatherWidthLabel">24px</strong></span>
+                        <input id="batchFeatherWidthInput" type="range" min="0" max="256" value="24">
+                      </label>
+                      <label class="checkbox-row compact">
+                        <input id="batchFeatherInvertInput" type="checkbox">
+                        <span>反相（保留外侧）</span>
+                      </label>
+                    </div>
+                    <p class="batch-edit-hint">在左侧预览拖拽绘制形状；形状内保留，边缘羽化，外侧透明（可反相）。同一形状套到所有选中帧。</p>
+                    <span id="batchFeatherShapeLabel" class="batch-edit-rect-label">未设置羽化形状</span>
+                    <button id="batchFeatherClearButton" class="ghost-button tiny" type="button">清除羽化形状</button>
+                  </div>
+
                   <div class="batch-edit-actions">
                     <label class="checkbox-row compact">
                       <input id="batchEditLivePreviewInput" type="checkbox" checked>
@@ -788,7 +814,7 @@
                       <button id="batchEditApplyButton" class="primary-button" type="button">应用到选中帧</button>
                       <button id="batchEditUndoButton" class="ghost-button" type="button">撤销上次</button>
                     </div>
-                    <p id="batchEditHint" class="batch-edit-hint">先预览，再应用。操作顺序：裁图 → 不透明度。</p>
+                    <p id="batchEditHint" class="batch-edit-hint">先预览，再应用。操作顺序：裁图 → 不透明度 → 羽化。</p>
                   </div>
                 </div>
               </details>

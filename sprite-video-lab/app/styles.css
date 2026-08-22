@@ -2077,7 +2077,8 @@ button:focus-visible,
   border-top: 1px dashed var(--line);
 }
 
-.animation-stage.is-batch-crop-drag {
+.animation-stage.is-batch-crop-drag,
+.animation-stage.is-batch-feather-drag {
   cursor: crosshair;
 }
 

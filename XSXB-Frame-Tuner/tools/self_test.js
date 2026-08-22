@@ -691,7 +691,17 @@ assert.match(tunerAppSource, /audio: \(samples\) => liteExportAudio\(samples\)/)
 assert.match(tunerAppSource, /measureFrame:/);
 assert.match(tunerAppSource, /options\.measureOnly === true/);
 assert.match(tunerAppSource, /projectKind !== "frame_lite"/);
+assert.match(liteUiSource, /liteImportPanel/);
+assert.match(liteUiSource, /liteManagePanel/);
+assert.match(liteUiSource, /\/api\/lite\/delete-animation/);
+assert.match(liteServerSource, /\/api\/lite\/delete-profile/);
+assert.match(liteUiSource, /liteImportAnimationPreset/);
+assert.match(liteUiSource, /序列类型/);
+assert.match(liteUiSource, /\/api\/lite\/import-animation/);
 assert.match(liteUiSource, /透明序列导出/);
+assert.match(liteServerSource, /\/api\/lite\/import-animation/);
+assert.match(liteServerSource, /function importLiteAnimation\(/);
+assert.match(tunerAppSource, /xsxb-lite-imported/);
 assert.doesNotMatch(liteUiSource, /id="litePhaseDurationMs"/);
 assert.doesNotMatch(liteUiSource, /id="liteExportFps"/);
 assert.match(liteUiSource, /导出 PNG 序列/);
@@ -1197,6 +1207,31 @@ try {
   assert.deepEqual(liteStore.readJson(paths.attackTrails, {}).presets, []);
   assert.equal(fs.existsSync(paths.settings), true);
   assert.equal(paths.workspaceDir.startsWith(path.resolve(liteStoreTestRoot)), true);
+  const { importPngFrames } = require("./frame_tuner_lite/import_payload");
+  const tinyPng = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAD0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+    "base64",
+  );
+  const importedFrames = importPngFrames(project, {
+    profileId: "spell_test",
+    profileLabel: "Spell Test",
+    animationId: "cast",
+    fps: 12,
+    files: [{ name: "frame_001.png", buffer: tinyPng }],
+  });
+  assert.equal(importedFrames.frames, 1);
+  assert.equal(importedFrames.profileId, "spell_test");
+  const deletedAnimation = require("./frame_tuner_lite/lite_delete").deleteLiteAnimation(project, {
+    profileId: "spell_test",
+    animationId: "cast",
+  });
+  assert.deepEqual(deletedAnimation.removedAnimations, ["cast"]);
+  const manifestAfterDelete = liteStore.readJson(paths.manifest, { profiles: [] });
+  assert.equal(manifestAfterDelete.profiles.some((entry) => entry.id === "spell_test"), true);
+  assert.equal((manifestAfterDelete.profiles.find((entry) => entry.id === "spell_test")?.animations || []).length, 0);
+  const deletedProfile = require("./frame_tuner_lite/lite_delete").deleteLiteProfile(project, { profileId: "spell_test" });
+  assert.equal(deletedProfile.profileId, "spell_test");
+  assert.equal(liteStore.readJson(paths.manifest, { profiles: [] }).profiles.length, 0);
   const exportedAnimationDirectory = path.join(liteStoreTestRoot, "portable_export", "idle");
   const exportedAudioDirectory = path.join(liteStoreTestRoot, "portable_export", "audio");
   fs.mkdirSync(exportedAnimationDirectory, { recursive: true });

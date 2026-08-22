@@ -25,7 +25,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
-from PIL import Image, ImageChops, ImageFilter
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageOps
 
 
 ROOT_DIR = Path(__file__).resolve().parent
@@ -3862,6 +3862,114 @@ def apply_opacity_ops(
     return current, changed
 
 
+def _normalize_feather_bounds(bounds: dict | None, image_size: tuple[int, int]) -> tuple[int, int, int, int] | None:
+    if not isinstance(bounds, dict):
+        return None
+    width, height = image_size
+    x = safe_int(bounds.get("x"), 0)
+    y = safe_int(bounds.get("y"), 0)
+    w = max(1, safe_int(bounds.get("w"), safe_int(bounds.get("width"), 0)))
+    h = max(1, safe_int(bounds.get("h"), safe_int(bounds.get("height"), 0)))
+    left = max(0, min(width - 1, x))
+    top = max(0, min(height - 1, y))
+    right = max(left + 1, min(width, left + w))
+    bottom = max(top + 1, min(height, top + h))
+    return left, top, right, bottom
+
+
+def _normalize_feather_points(points: list | None, image_size: tuple[int, int]) -> list[tuple[int, int]]:
+    width, height = image_size
+    normalized: list[tuple[int, int]] = []
+    for point in points or []:
+        if not isinstance(point, dict):
+            continue
+        x = max(0, min(width - 1, safe_int(point.get("x"), 0)))
+        y = max(0, min(height - 1, safe_int(point.get("y"), 0)))
+        if normalized and normalized[-1] == (x, y):
+            continue
+        normalized.append((x, y))
+    return normalized
+
+
+def build_feather_mask(
+    image_size: tuple[int, int],
+    feather: dict,
+    origin_offset: tuple[int, int] = (0, 0),
+) -> Image.Image | None:
+    """Build L mask: 255=keep, 0=clear. Softened by Gaussian feather width."""
+    shape = str(feather.get("shape") or "ellipse").strip().lower()
+    feather_px = max(0, safe_int(feather.get("feather"), safe_int(feather.get("width"), 24)))
+    invert = safe_bool(feather.get("invert"), False)
+    ox, oy = origin_offset
+    width, height = image_size
+    mask = Image.new("L", (width, height), 0)
+    draw = ImageDraw.Draw(mask)
+
+    if shape in {"ellipse", "circle", "rect", "rectangle"}:
+        bounds = feather.get("bounds") or feather.get("rect")
+        box = _normalize_feather_bounds(bounds, (max(width + abs(ox), 1), max(height + abs(oy), 1)))
+        if box is None:
+            return None
+        left, top, right, bottom = box
+        left -= ox
+        top -= oy
+        right -= ox
+        bottom -= oy
+        # Clip to current image
+        left = max(-feather_px - 2, min(width + feather_px + 2, left))
+        top = max(-feather_px - 2, min(height + feather_px + 2, top))
+        right = max(left + 1, min(width + feather_px + 2, right))
+        bottom = max(top + 1, min(height + feather_px + 2, bottom))
+        if shape in {"ellipse", "circle"}:
+            if shape == "circle":
+                side = min(right - left, bottom - top)
+                cx = (left + right) / 2.0
+                cy = (top + bottom) / 2.0
+                half = side / 2.0
+                left = int(round(cx - half))
+                top = int(round(cy - half))
+                right = int(round(cx + half))
+                bottom = int(round(cy + half))
+            draw.ellipse((left, top, right - 1, bottom - 1), fill=255)
+        else:
+            draw.rectangle((left, top, right - 1, bottom - 1), fill=255)
+    elif shape in {"lasso", "polygon", "freehand"}:
+        points = _normalize_feather_points(feather.get("points"), (max(width + abs(ox), 1), max(height + abs(oy), 1)))
+        shifted = [(x - ox, y - oy) for x, y in points]
+        if len(shifted) < 3:
+            return None
+        draw.polygon(shifted, fill=255)
+    else:
+        return None
+
+    if feather_px > 0:
+        # Approximate soft edge width with Gaussian blur.
+        radius = max(0.5, feather_px / 2.0)
+        mask = mask.filter(ImageFilter.GaussianBlur(radius=radius))
+
+    if invert:
+        mask = ImageOps.invert(mask)
+    return mask
+
+
+def apply_feather_ops(
+    image: Image.Image,
+    feather: dict | None,
+    origin_offset: tuple[int, int] = (0, 0),
+) -> tuple[Image.Image, int]:
+    if not feather or not safe_bool(feather.get("enabled"), False):
+        return image, 0
+    rgba = image.convert("RGBA")
+    mask = build_feather_mask(rgba.size, feather, origin_offset=origin_offset)
+    if mask is None:
+        raise ValueError("feather shape is missing or invalid")
+    alpha = rgba.getchannel("A")
+    feathered_alpha = ImageChops.multiply(alpha, mask)
+    out = rgba.copy()
+    out.putalpha(feathered_alpha)
+    return out, 1
+
+
 def apply_crop_ops(
     image: Image.Image,
     crop: dict | None,
@@ -4014,27 +4122,47 @@ def apply_batch_edit(
     magic_id: str | None = None,
     crop: dict | None = None,
     opacity: dict | None = None,
+    feather: dict | None = None,
 ) -> dict:
     job_id = str(job_id or "").strip()
     if not job_id or Path(job_id).name != job_id:
         raise ValueError("invalid job id")
     crop = crop or {}
     opacity = opacity or {}
+    feather = feather or {}
     crop_enabled = safe_bool(crop.get("enabled"), False)
     opacity_enabled = safe_bool(opacity.get("enabled"), False)
-    if not crop_enabled and not opacity_enabled:
-        raise ValueError("enable crop and/or opacity before applying")
+    feather_enabled = safe_bool(feather.get("enabled"), False)
+    if not crop_enabled and not opacity_enabled and not feather_enabled:
+        raise ValueError("enable crop, opacity, and/or feather before applying")
+    if feather_enabled:
+        shape = str(feather.get("shape") or "ellipse").strip().lower()
+        if shape in {"lasso", "polygon", "freehand"}:
+            if len(feather.get("points") or []) < 3:
+                raise ValueError("lasso feather needs at least 3 points")
+        else:
+            bounds = feather.get("bounds") or feather.get("rect") or {}
+            if max(0, safe_int(bounds.get("w"), safe_int(bounds.get("width"), 0))) < 1:
+                raise ValueError("draw a feather shape before applying")
 
     resolved = resolve_batch_edit_targets(job_id, variant_key, selected_indices, magic_id=magic_id)
     targets = resolved["targets"]
     paths = [Path(item["path"]) for item in targets]
 
     union_box = None
+    crop_origin = (0, 0)
     if crop_enabled and str(crop.get("mode") or "bbox").strip().lower() == "bbox":
         padding = max(0, safe_int(crop.get("padding"), MAGIC_CROP_PADDING))
         union_box = compute_union_alpha_bbox(paths, padding=padding)
         if union_box is None:
             raise ValueError("selected frames have no visible alpha for bbox crop")
+        crop_origin = (union_box[0], union_box[1])
+    elif crop_enabled and str(crop.get("mode") or "").strip().lower() == "rect":
+        rect = crop.get("rect") or {}
+        crop_origin = (max(0, safe_int(rect.get("x"), 0)), max(0, safe_int(rect.get("y"), 0)))
+    elif crop_enabled and str(crop.get("mode") or "").strip().lower() == "margins":
+        margins = crop.get("margins") or {}
+        crop_origin = (max(0, safe_int(margins.get("left"), 0)), max(0, safe_int(margins.get("top"), 0)))
 
     clear_batch_edit_snapshot(job_id)
     snapshot_root = batch_edit_snapshot_dir(job_id)
@@ -4080,6 +4208,10 @@ def apply_batch_edit(
                     opacity if opacity_enabled else None,
                 )
                 opacity_changed_total += opacity_changed
+                if feather_enabled:
+                    # Shape is authored in pre-crop source pixels; shift after crop.
+                    origin = crop_origin if crop_enabled else (0, 0)
+                    edited_image, _ = apply_feather_ops(edited_image, feather, origin_offset=origin)
                 edited_image.save(source_path)
                 width, height = edited_image.size
                 target["entry"]["width"] = width
@@ -4154,6 +4286,7 @@ def apply_batch_edit(
             "items": snapshot_items,
             "crop": crop,
             "opacity": opacity,
+            "feather": feather,
             "union_box": list(union_box) if union_box else None,
             "magic_invalidated": magic_invalidated,
         }
@@ -6450,6 +6583,7 @@ class AppHandler(BaseHTTPRequestHandler):
                     magic_id=str(payload.get("magic_id") or "") or None,
                     crop=payload.get("crop") if isinstance(payload.get("crop"), dict) else {},
                     opacity=payload.get("opacity") if isinstance(payload.get("opacity"), dict) else {},
+                    feather=payload.get("feather") if isinstance(payload.get("feather"), dict) else {},
                 )
                 self.send_json({"ok": True, "result": result})
                 return

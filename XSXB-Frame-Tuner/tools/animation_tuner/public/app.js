@@ -4563,7 +4563,9 @@ function zoomViewAt(event) {
     x: (px - view.x) / view.zoom,
     y: (py - view.y) / view.zoom,
   };
-  const factor = event.deltaY < 0 ? 1.08 : 0.92;
+  // Was 1.08 / 0.92 (~8% per notch); keep 20% of that step for finer canvas zoom.
+  const zoomStep = 1 + (1.08 - 1) * 0.2;
+  const factor = event.deltaY < 0 ? zoomStep : 1 / zoomStep;
   view.zoom = Math.min(8, Math.max(0.12, view.zoom * factor));
   view.x = px - before.x * view.zoom;
   view.y = py - before.y * view.zoom;
@@ -7715,7 +7717,9 @@ window.XsxbFrameTunerLite = {
     ready: config?.projectKind === "frame_lite" && Boolean(currentGroup),
     projectId: config?.activeProjectId || "",
     profileId: currentGroup?.profileId || "",
+    profileLabel: currentGroup?.profileLabel || currentGroup?.profileId || "",
     animationId: currentGroup?.animationId || currentGroup?.name || "",
+    animationName: currentGroup?.name || currentGroup?.animationId || "",
     groupId: currentGroup?.uiId || "",
     frameCount: currentGroup?.frames?.length || 0,
     settings: structuredClone(config?.liteSettings || {}),
@@ -7738,7 +7742,34 @@ window.XsxbFrameTunerLite = {
     await selectGroup(group);
     return window.XsxbFrameTunerLite.current();
   },
+  profiles: () => (config?.profiles || []).map((profile) => ({ id: profile.id, label: profile.label || profile.id })),
+  profileActorGroups: (profileId) => (config?.groups || [])
+    .filter((group) => group.profileId === profileId && group.type !== "vfx" && !group.previewOwner)
+    .map((group) => ({
+      animationId: group.animationId || group.name,
+      name: group.name,
+    })),
 };
+window.addEventListener("xsxb-lite-imported", async (event) => {
+  if (config?.projectKind !== "frame_lite") return;
+  const detail = event.detail || {};
+  if (detail.profileId && detail.profileId !== "all") {
+    selectedProfileId = detail.profileId;
+    localStorage.setItem("animationTuner.profile", selectedProfileId);
+  } else if (detail.profileId === "all") {
+    selectedProfileId = "all";
+    localStorage.setItem("animationTuner.profile", "all");
+  }
+  imageCache.clear();
+  await loadConfig();
+  resizeCanvas();
+  if (detail.profileId && detail.animationId) {
+    const group = config.groups.find((entry) => entry.profileId === detail.profileId
+      && (entry.animationId === detail.animationId || entry.name === detail.animationId));
+    if (group) await selectGroup(group);
+  }
+  if (detail.message) status(detail.message);
+});
 window.XsxbFrameTunerUnity = {
   collectBakedFrames: async () => collectUnityBakedFramesForSave(
     collectFrameImageAttachmentsForSave(),

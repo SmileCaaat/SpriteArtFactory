@@ -19,6 +19,8 @@ const { EMPTY_MANIFEST, EMPTY_SETTINGS, EMPTY_TUNING, createLiteStore, reslash, 
 const { withUtf8Charset } = require("../http_content_type");
 
 const { TOOL_ROOT, LITE_ROOT } = require("./lite_paths");
+const { importPngFrames, importPngSheet } = require("./import_payload");
+const { deleteLiteAnimation, deleteLiteProfile } = require("./lite_delete");
 const ROOT = LITE_ROOT;
 const FULL_PUBLIC = path.join(TOOL_ROOT, "tools", "animation_tuner", "public");
 const LITE_PUBLIC = path.join(__dirname, "public");
@@ -31,6 +33,17 @@ const scaleVector = (value, fallback = 1) => ({ x: Number(value?.x ?? fallback),
 const safeResolve = (base, value) => {
   const full = path.resolve(base, String(value || ""));
   return full === base || full.startsWith(`${base}${path.sep}`) ? full : null;
+};
+const resolveReadableAsset = (value) => {
+  const relative = String(value || "");
+  if (!relative) return null;
+  const fromLite = safeResolve(ROOT, relative);
+  if (fromLite && fs.existsSync(fromLite)) return fromLite;
+  if (TOOL_ROOT !== ROOT) {
+    const fromTool = safeResolve(TOOL_ROOT, relative);
+    if (fromTool && fs.existsSync(fromTool)) return fromTool;
+  }
+  return fromLite;
 };
 const isInside = (child, parent) => {
   const relative = path.relative(parent, child);
@@ -465,6 +478,32 @@ function replaceFrame(project, payload) {
   return { path: reslash(path.relative(ROOT, full)), ...pngSize(full) };
 }
 
+function importLiteAnimation(project, payload) {
+  const mode = String(payload.source || payload.mode || "frames").toLowerCase();
+  const profileId = slug(payload.profileId, "sequence");
+  const animationId = slug(payload.animationId, "animation");
+  if (!animationId || animationId === "animation") throw new Error("请填写序列 ID。");
+  const common = {
+    profileId,
+    profileLabel: String(payload.profileLabel || profileId),
+    animationId,
+    fps: payload.fps,
+    attachTo: payload.attachTo,
+    layer: payload.layer,
+    independent: payload.independent === true,
+  };
+  if (mode === "sheet") {
+    return importPngSheet(project, {
+      ...common,
+      sheetData: payload.sheetData,
+      json: payload.json,
+    });
+  }
+  const frames = Array.isArray(payload.frames) ? payload.frames : [];
+  if (!frames.length) throw new Error("没有 PNG 帧可导入。");
+  return importPngFrames(project, { ...common, files: frames });
+}
+
 function savePayload(project, payload) {
   const target = store.paths(project);
   const tuning = {
@@ -486,7 +525,7 @@ function savePayload(project, payload) {
   const trails = normalizeAttackTrails(payload.attack_trails || EMPTY_ATTACK_TRAILS);
   for (const segments of Object.values(trails.bindings)) {
     for (const segment of segments) {
-      const texture = safeResolve(ROOT, segment.texture?.path || "");
+      const texture = resolveReadableAsset(segment.texture?.path || "");
       if (texture && fs.existsSync(texture)) {
         const info = pngInfo(fs.readFileSync(texture));
         segment.texture.width = info.width; segment.texture.height = info.height; segment.texture.hasEffectiveAlpha = info.hasEffectiveAlpha;
@@ -598,6 +637,42 @@ const server = http.createServer(async (req, res) => {
       if (!frames.length || frames.length !== files.length) return send(res, 400, { error: "Replacement PNG count must match the animation frame count." });
       return send(res, 200, { ok: true, frames: frames.map((frame, index) => replaceFrame(project, { path: frame.path, data: files[index].data })) });
     }
+    if (req.method === "POST" && url.pathname === "/api/lite/delete-animation") {
+      const payload = JSON.parse(await readBody(req));
+      const project = store.resolveProject(payload.projectId);
+      if (!project) return send(res, 404, { error: "Lite project not found." });
+      const deleted = deleteLiteAnimation(project, payload);
+      return send(res, 200, {
+        ok: true,
+        deleted,
+        configRevision: projectConfigRevision(project),
+        warnings: validateLiteProject(project),
+      });
+    }
+    if (req.method === "POST" && url.pathname === "/api/lite/delete-profile") {
+      const payload = JSON.parse(await readBody(req));
+      const project = store.resolveProject(payload.projectId);
+      if (!project) return send(res, 404, { error: "Lite project not found." });
+      const deleted = deleteLiteProfile(project, payload);
+      return send(res, 200, {
+        ok: true,
+        deleted,
+        configRevision: projectConfigRevision(project),
+        warnings: validateLiteProject(project),
+      });
+    }
+    if (req.method === "POST" && url.pathname === "/api/lite/import-animation") {
+      const payload = JSON.parse(await readBody(req));
+      const project = store.resolveProject(payload.projectId);
+      if (!project) return send(res, 404, { error: "Lite project not found." });
+      const imported = importLiteAnimation(project, payload);
+      return send(res, 200, {
+        ok: true,
+        imported,
+        configRevision: projectConfigRevision(project),
+        warnings: validateLiteProject(project),
+      });
+    }
     if (req.method === "POST" && url.pathname === "/api/lite/settings") {
       const payload = JSON.parse(await readBody(req));
       const project = store.resolveProject(payload.projectId);
@@ -647,7 +722,7 @@ const server = http.createServer(async (req, res) => {
       });
     }
     if (req.method === "GET" && url.pathname === "/asset") {
-      const full = safeResolve(ROOT, url.searchParams.get("path"));
+      const full = resolveReadableAsset(url.searchParams.get("path"));
       const types = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif", ...AUDIO_MIME_BY_EXTENSION };
       const type = types[path.extname(full || "").toLowerCase()];
       if (!full || !fs.existsSync(full) || !type) return send(res, 404, "Not found", "text/plain");
@@ -674,8 +749,11 @@ module.exports = {
   AUDIO_MIME_BY_EXTENSION,
   buildGroups,
   configResponse,
+  deleteLiteAnimation,
+  deleteLiteProfile,
   duplicateFrameBindings,
   duplicateTrailFrameSlices,
+  importLiteAnimation,
   remapFrameOverrideDictionary,
   saveFrameAudioBindings,
   server,

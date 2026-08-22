@@ -43,6 +43,12 @@ const state = {
     alphaMin: 1,
     alphaMax: 254,
     alphaAction: "opaque",
+    featherEnabled: false,
+    featherShape: "ellipse",
+    featherWidth: 24,
+    featherInvert: false,
+    featherBounds: null,
+    featherPoints: null,
     targetVariant: "original",
     drag: null,
     canUndo: false,
@@ -432,6 +438,13 @@ function bindElements() {
     "batchOpacityAlphaMinInput",
     "batchOpacityAlphaMaxInput",
     "batchOpacityActionButtons",
+    "batchFeatherEnabledInput",
+    "batchFeatherShapeButtons",
+    "batchFeatherWidthInput",
+    "batchFeatherWidthLabel",
+    "batchFeatherInvertInput",
+    "batchFeatherShapeLabel",
+    "batchFeatherClearButton",
     "batchEditLivePreviewInput",
     "batchEditApplyButton",
     "batchEditUndoButton",
@@ -3470,11 +3483,28 @@ function updateBatchEditRectLabel() {
     : "未设置裁切框";
 }
 
+function updateBatchFeatherShapeLabel() {
+  if (!els.batchFeatherShapeLabel) return;
+  const batch = state.batchEdit;
+  if (batch.featherShape === "lasso") {
+    const count = batch.featherPoints?.length || 0;
+    els.batchFeatherShapeLabel.textContent = count >= 3
+      ? `套索 ${count} 点 · 羽化 ${batch.featherWidth}px`
+      : "未设置羽化形状（套索至少 3 点）";
+    return;
+  }
+  const bounds = batch.featherBounds;
+  els.batchFeatherShapeLabel.textContent = bounds
+    ? `${batch.featherShape} x=${bounds.x}, y=${bounds.y}, w=${bounds.w}, h=${bounds.h} · 羽化 ${batch.featherWidth}px`
+    : "未设置羽化形状";
+}
+
 function syncBatchEditControls() {
   const batch = state.batchEdit;
   if (!els.batchCropEnabledInput) return;
   els.batchCropEnabledInput.checked = Boolean(batch.cropEnabled);
   els.batchOpacityEnabledInput.checked = Boolean(batch.opacityEnabled);
+  els.batchFeatherEnabledInput.checked = Boolean(batch.featherEnabled);
   els.batchEditLivePreviewInput.checked = Boolean(batch.livePreview);
   els.batchCropPaddingInput.value = String(batch.padding);
   els.batchCropMarginTopInput.value = String(batch.margins.top);
@@ -3485,6 +3515,9 @@ function syncBatchEditControls() {
   els.batchOpacityFactorLabel.textContent = `${batch.factor}%`;
   els.batchOpacityAlphaMinInput.value = String(batch.alphaMin);
   els.batchOpacityAlphaMaxInput.value = String(batch.alphaMax);
+  els.batchFeatherWidthInput.value = String(batch.featherWidth);
+  els.batchFeatherWidthLabel.textContent = `${batch.featherWidth}px`;
+  els.batchFeatherInvertInput.checked = Boolean(batch.featherInvert);
   els.batchEditTargetSelect.value = batch.targetVariant || "original";
 
   els.batchCropModeButtons?.querySelectorAll("[data-batch-crop-mode]").forEach((button) => {
@@ -3496,6 +3529,9 @@ function syncBatchEditControls() {
   els.batchOpacityActionButtons?.querySelectorAll("[data-batch-opacity-action]").forEach((button) => {
     setChoiceButtonState(button, button.dataset.batchOpacityAction === batch.alphaAction);
   });
+  els.batchFeatherShapeButtons?.querySelectorAll("[data-batch-feather-shape]").forEach((button) => {
+    setChoiceButtonState(button, button.dataset.batchFeatherShape === batch.featherShape);
+  });
 
   els.batchCropBboxControls.hidden = batch.cropMode !== "bbox";
   els.batchCropMarginsControls.hidden = batch.cropMode !== "margins";
@@ -3505,24 +3541,35 @@ function syncBatchEditControls() {
   els.batchEditUndoButton.disabled = !batch.canUndo || batch.inFlight;
   els.batchEditApplyButton.disabled = batch.inFlight || !state.job || state.selected.size === 0;
   updateBatchEditRectLabel();
+  updateBatchFeatherShapeLabel();
   updateBatchCropDragCursor();
 }
 
 function updateBatchCropDragCursor() {
-  const stage = els.animationPreviewCanvas?.closest(".animation-stage");
-  const enabled =
+  const cropEnabled =
     state.batchEdit.cropEnabled
     && state.batchEdit.cropMode === "rect"
+    && !state.batchEdit.featherEnabled
     && state.batchEdit.targetVariant === "original";
-  stage?.classList.toggle("is-batch-crop-drag", Boolean(enabled));
+  const featherEnabled =
+    state.batchEdit.featherEnabled
+    && state.batchEdit.targetVariant === "original";
+  const stage = els.animationPreviewCanvas?.closest(".animation-stage");
+  stage?.classList.toggle("is-batch-crop-drag", Boolean(cropEnabled));
+  stage?.classList.toggle("is-batch-feather-drag", Boolean(featherEnabled));
   MAGIC_VARIANT_CONFIGS.forEach((config) => {
     const canvas = els[config.canvasId];
     const variantStage = canvas?.closest(".animation-stage");
-    const variantEnabled =
+    const variantCrop =
       state.batchEdit.cropEnabled
       && state.batchEdit.cropMode === "rect"
+      && !state.batchEdit.featherEnabled
       && state.batchEdit.targetVariant === config.key;
-    variantStage?.classList.toggle("is-batch-crop-drag", Boolean(variantEnabled));
+    const variantFeather =
+      state.batchEdit.featherEnabled
+      && state.batchEdit.targetVariant === config.key;
+    variantStage?.classList.toggle("is-batch-crop-drag", Boolean(variantCrop));
+    variantStage?.classList.toggle("is-batch-feather-drag", Boolean(variantFeather));
   });
 }
 
@@ -3606,6 +3653,23 @@ function buildBatchEditPayload() {
       alpha_max: Math.max(0, Math.min(255, Number(batch.alphaMax) || 0)),
       action: batch.alphaAction === "clear" ? "clear" : "opaque",
     },
+    feather: {
+      enabled: Boolean(batch.featherEnabled),
+      shape: batch.featherShape || "ellipse",
+      feather: Math.max(0, Number(batch.featherWidth) || 0),
+      invert: Boolean(batch.featherInvert),
+      bounds: batch.featherBounds
+        ? {
+            x: batch.featherBounds.x,
+            y: batch.featherBounds.y,
+            w: batch.featherBounds.w,
+            h: batch.featherBounds.h,
+          }
+        : null,
+      points: Array.isArray(batch.featherPoints)
+        ? batch.featherPoints.map((point) => ({ x: point.x, y: point.y }))
+        : null,
+    },
   };
 }
 
@@ -3619,13 +3683,24 @@ async function applyBatchEdit() {
     return;
   }
   const batch = state.batchEdit;
-  if (!batch.cropEnabled && !batch.opacityEnabled) {
-    setStatus("请至少启用裁图或不透明度。", "error");
+  if (!batch.cropEnabled && !batch.opacityEnabled && !batch.featherEnabled) {
+    setStatus("请至少启用裁图、不透明度或羽化。", "error");
     return;
   }
   if (batch.cropEnabled && batch.cropMode === "rect" && !batch.rect) {
     setStatus("拖框模式请先在预览画布拖出裁切框。", "error");
     return;
+  }
+  if (batch.featherEnabled) {
+    if (batch.featherShape === "lasso") {
+      if (!batch.featherPoints || batch.featherPoints.length < 3) {
+        setStatus("套索羽化请先画出至少 3 个点的区域。", "error");
+        return;
+      }
+    } else if (!batch.featherBounds) {
+      setStatus("请先在预览画布拖出羽化形状。", "error");
+      return;
+    }
   }
   if (batch.targetVariant !== "original" && !state.magicPreview?.magic_id) {
     setStatus("当前没有可编辑的缩放变体。", "error");
@@ -3714,11 +3789,11 @@ function bindBatchEditCropDrag(canvas) {
   if (!canvas) return;
 
   const onPointerDown = (event) => {
-    if (
-      !state.batchEdit.cropEnabled
-      || state.batchEdit.cropMode !== "rect"
-      || !batchEditAppliesToCanvas(canvas)
-    ) {
+    if (!batchEditAppliesToCanvas(canvas)) {
+      return;
+    }
+    const tool = batchPointerTool();
+    if (!tool) {
       return;
     }
     const target = currentBatchEditPreviewImage();
@@ -3731,11 +3806,31 @@ function bindBatchEditCropDrag(canvas) {
     }
     event.preventDefault();
     canvas.setPointerCapture?.(event.pointerId);
-    state.batchEdit.drag = {
-      start: { x: point.x, y: point.y },
-      rect: { x: point.x, y: point.y, w: 1, h: 1 },
-      pointerId: event.pointerId,
-    };
+    if (tool === "feather") {
+      if (state.batchEdit.featherShape === "lasso") {
+        state.batchEdit.drag = {
+          kind: "feather",
+          shape: "lasso",
+          points: [{ x: point.x, y: point.y }],
+          pointerId: event.pointerId,
+        };
+      } else {
+        state.batchEdit.drag = {
+          kind: "feather",
+          shape: state.batchEdit.featherShape,
+          start: { x: point.x, y: point.y },
+          bounds: { x: point.x, y: point.y, w: 1, h: 1 },
+          pointerId: event.pointerId,
+        };
+      }
+    } else {
+      state.batchEdit.drag = {
+        kind: "crop",
+        start: { x: point.x, y: point.y },
+        rect: { x: point.x, y: point.y, w: 1, h: 1 },
+        pointerId: event.pointerId,
+      };
+    }
     refreshBatchEditPreview();
   };
 
@@ -3752,7 +3847,22 @@ function bindBatchEditCropDrag(canvas) {
     if (!point) {
       return;
     }
-    drag.rect = normalizeBatchRect(drag.start, point);
+    if (drag.kind === "feather") {
+      if (drag.shape === "lasso") {
+        const last = drag.points[drag.points.length - 1];
+        if (!last || Math.abs(last.x - point.x) + Math.abs(last.y - point.y) >= 2) {
+          drag.points.push({ x: point.x, y: point.y });
+        }
+      } else {
+        let bounds = normalizeBatchRect(drag.start, point);
+        if (drag.shape === "circle") {
+          bounds = normalizeCircleBounds(bounds);
+        }
+        drag.bounds = bounds;
+      }
+    } else {
+      drag.rect = normalizeBatchRect(drag.start, point);
+    }
     refreshBatchEditPreview();
   };
 
@@ -3761,9 +3871,20 @@ function bindBatchEditCropDrag(canvas) {
     if (!drag || (event && drag.pointerId !== event.pointerId)) {
       return;
     }
-    state.batchEdit.rect = drag.rect;
+    if (drag.kind === "feather") {
+      if (drag.shape === "lasso") {
+        state.batchEdit.featherPoints = (drag.points || []).slice();
+        state.batchEdit.featherBounds = null;
+      } else {
+        state.batchEdit.featherBounds = drag.bounds;
+        state.batchEdit.featherPoints = null;
+      }
+    } else {
+      state.batchEdit.rect = drag.rect;
+    }
     state.batchEdit.drag = null;
     updateBatchEditRectLabel();
+    updateBatchFeatherShapeLabel();
     refreshBatchEditPreview();
   };
 
@@ -3796,6 +3917,11 @@ function bindBatchEditEvents() {
     syncBatchEditControls();
     refreshBatchEditPreview();
   });
+  els.batchFeatherEnabledInput?.addEventListener("change", () => {
+    state.batchEdit.featherEnabled = els.batchFeatherEnabledInput.checked;
+    syncBatchEditControls();
+    refreshBatchEditPreview();
+  });
   els.batchEditLivePreviewInput?.addEventListener("change", () => {
     state.batchEdit.livePreview = els.batchEditLivePreviewInput.checked;
     refreshBatchEditPreview();
@@ -3818,6 +3944,13 @@ function bindBatchEditEvents() {
     const button = event.target.closest("[data-batch-opacity-action]");
     if (!button) return;
     state.batchEdit.alphaAction = button.dataset.batchOpacityAction || "opaque";
+    syncBatchEditControls();
+    refreshBatchEditPreview();
+  });
+  els.batchFeatherShapeButtons?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-batch-feather-shape]");
+    if (!button) return;
+    state.batchEdit.featherShape = button.dataset.batchFeatherShape || "ellipse";
     syncBatchEditControls();
     refreshBatchEditPreview();
   });
@@ -3848,10 +3981,27 @@ function bindBatchEditEvents() {
     state.batchEdit.alphaMax = Math.max(0, Math.min(255, Number(els.batchOpacityAlphaMaxInput.value) || 0));
     refreshBatchEditPreview();
   });
+  els.batchFeatherWidthInput?.addEventListener("input", () => {
+    state.batchEdit.featherWidth = Math.max(0, Math.min(256, Number(els.batchFeatherWidthInput.value) || 0));
+    els.batchFeatherWidthLabel.textContent = `${state.batchEdit.featherWidth}px`;
+    updateBatchFeatherShapeLabel();
+    refreshBatchEditPreview();
+  });
+  els.batchFeatherInvertInput?.addEventListener("change", () => {
+    state.batchEdit.featherInvert = els.batchFeatherInvertInput.checked;
+    refreshBatchEditPreview();
+  });
   els.batchCropRectClearButton?.addEventListener("click", () => {
     state.batchEdit.rect = null;
-    state.batchEdit.drag = null;
+    if (state.batchEdit.drag?.kind === "crop") state.batchEdit.drag = null;
     updateBatchEditRectLabel();
+    refreshBatchEditPreview();
+  });
+  els.batchFeatherClearButton?.addEventListener("click", () => {
+    state.batchEdit.featherBounds = null;
+    state.batchEdit.featherPoints = null;
+    if (state.batchEdit.drag?.kind === "feather") state.batchEdit.drag = null;
+    updateBatchFeatherShapeLabel();
     refreshBatchEditPreview();
   });
   els.batchEditApplyButton?.addEventListener("click", () => {
@@ -3888,7 +4038,103 @@ function batchEditActive() {
   if (!batch?.livePreview) {
     return false;
   }
-  return Boolean(batch.cropEnabled || batch.opacityEnabled);
+  return Boolean(batch.cropEnabled || batch.opacityEnabled || batch.featherEnabled);
+}
+
+function batchPointerTool() {
+  const batch = state.batchEdit;
+  if (!batch) return null;
+  if (batch.featherEnabled) return "feather";
+  if (batch.cropEnabled && batch.cropMode === "rect") return "crop";
+  return null;
+}
+
+function normalizeCircleBounds(rect) {
+  const side = Math.max(1, Math.min(rect.w, rect.h));
+  const cx = rect.x + rect.w / 2;
+  const cy = rect.y + rect.h / 2;
+  const half = side / 2;
+  return {
+    x: Math.round(cx - half),
+    y: Math.round(cy - half),
+    w: Math.round(side),
+    h: Math.round(side),
+  };
+}
+
+function drawFeatherShapePath(ctx, shape, bounds, points, origin = { x: 0, y: 0 }) {
+  const ox = origin.x || 0;
+  const oy = origin.y || 0;
+  if (shape === "lasso") {
+    const pts = points || [];
+    if (pts.length < 2) return false;
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x - ox, pts[0].y - oy);
+    for (let i = 1; i < pts.length; i += 1) {
+      ctx.lineTo(pts[i].x - ox, pts[i].y - oy);
+    }
+    ctx.closePath();
+    return true;
+  }
+  if (!bounds) return false;
+  let box = { ...bounds };
+  if (shape === "circle") {
+    box = normalizeCircleBounds(box);
+  }
+  const x = box.x - ox;
+  const y = box.y - oy;
+  if (shape === "rect") {
+    ctx.beginPath();
+    ctx.rect(x, y, box.w, box.h);
+    return true;
+  }
+  ctx.beginPath();
+  ctx.ellipse(x + box.w / 2, y + box.h / 2, Math.max(0.5, box.w / 2), Math.max(0.5, box.h / 2), 0, 0, Math.PI * 2);
+  return true;
+}
+
+function buildClientFeatherMask(width, height, featherCfg, origin = { x: 0, y: 0 }) {
+  const hard = document.createElement("canvas");
+  hard.width = width;
+  hard.height = height;
+  const hctx = hard.getContext("2d");
+  hctx.fillStyle = "#000";
+  hctx.fillRect(0, 0, width, height);
+  hctx.fillStyle = "#fff";
+  if (!drawFeatherShapePath(hctx, featherCfg.shape, featherCfg.bounds, featherCfg.points, origin)) {
+    return null;
+  }
+  hctx.fill();
+
+  const soft = document.createElement("canvas");
+  soft.width = width;
+  soft.height = height;
+  const sctx = soft.getContext("2d", { willReadFrequently: true });
+  const radius = Math.max(0, Number(featherCfg.feather) || 0) / 2;
+  if (radius > 0) {
+    sctx.filter = `blur(${radius}px)`;
+  }
+  sctx.drawImage(hard, 0, 0);
+  sctx.filter = "none";
+  const imageData = sctx.getImageData(0, 0, width, height);
+  if (featherCfg.invert) {
+    const data = imageData.data;
+    for (let i = 0; i < data.length; i += 4) {
+      data[i] = 255 - data[i];
+      data[i + 1] = 255 - data[i + 1];
+      data[i + 2] = 255 - data[i + 2];
+    }
+  }
+  return imageData;
+}
+
+function applyClientFeatherMask(imageData, maskData) {
+  if (!maskData) return;
+  const data = imageData.data;
+  const mask = maskData.data;
+  for (let i = 0; i < data.length; i += 4) {
+    data[i + 3] = Math.round((data[i + 3] * mask[i]) / 255);
+  }
 }
 
 function batchEditAppliesToCanvas(canvas) {
@@ -4047,7 +4293,7 @@ function applyBatchOpacityToImageData(imageData) {
 function createBatchEditedImageSource(image) {
   const width = image.naturalWidth || image.width;
   const height = image.naturalHeight || image.height;
-  const cropRect = resolveBatchCropRect(image);
+  const cropRect = state.batchEdit.cropEnabled ? resolveBatchCropRect(image) : null;
   const outWidth = cropRect ? Math.max(1, cropRect.w) : width;
   const outHeight = cropRect ? Math.max(1, cropRect.h) : height;
   const canvas = document.createElement("canvas");
@@ -4069,9 +4315,25 @@ function createBatchEditedImageSource(image) {
   } else {
     ctx.drawImage(image, 0, 0);
   }
-  if (state.batchEdit.opacityEnabled) {
+  const needsPixelPass = state.batchEdit.opacityEnabled || state.batchEdit.featherEnabled;
+  if (needsPixelPass) {
     const imageData = ctx.getImageData(0, 0, outWidth, outHeight);
     applyBatchOpacityToImageData(imageData);
+    if (state.batchEdit.featherEnabled) {
+      const draft = state.batchEdit.drag?.kind === "feather" ? state.batchEdit.drag : null;
+      const featherCfg = {
+        shape: state.batchEdit.featherShape,
+        feather: state.batchEdit.featherWidth,
+        invert: state.batchEdit.featherInvert,
+        bounds: draft?.bounds || state.batchEdit.featherBounds,
+        points: draft?.points || state.batchEdit.featherPoints,
+      };
+      const origin = cropRect ? { x: cropRect.x, y: cropRect.y } : { x: 0, y: 0 };
+      const mask = buildClientFeatherMask(outWidth, outHeight, featherCfg, origin);
+      if (mask) {
+        applyClientFeatherMask(imageData, mask);
+      }
+    }
     ctx.putImageData(imageData, 0, 0);
   }
   return { canvas, width: outWidth, height: outHeight, cropRect };
@@ -4098,6 +4360,29 @@ function drawBatchCropOverlay(ctx, metrics, cropRect, draftRect = null) {
   ctx.restore();
 }
 
+function drawBatchFeatherOverlay(ctx, metrics, draft = null) {
+  const batch = state.batchEdit;
+  const shape = batch.featherShape;
+  const bounds = draft?.bounds || batch.featherBounds;
+  const points = draft?.points || batch.featherPoints;
+  const scaleX = metrics.drawWidth / Math.max(1, metrics.imageWidth);
+  const scaleY = metrics.drawHeight / Math.max(1, metrics.imageHeight);
+  ctx.save();
+  ctx.translate(metrics.drawX, metrics.drawY);
+  ctx.scale(scaleX, scaleY);
+  ctx.strokeStyle = "#3aa0ff";
+  ctx.fillStyle = "rgba(58, 160, 255, 0.14)";
+  ctx.lineWidth = Math.max(1, 2 / Math.max(scaleX, scaleY));
+  ctx.setLineDash([6 / Math.max(scaleX, 0.001), 4 / Math.max(scaleX, 0.001)]);
+  if (!drawFeatherShapePath(ctx, shape, bounds, points, { x: 0, y: 0 })) {
+    ctx.restore();
+    return;
+  }
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
 function paintFrameOnCanvas(canvas, image, referenceSize = null) {
   const ctx = canvas.getContext("2d");
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -4106,10 +4391,11 @@ function paintFrameOnCanvas(canvas, image, referenceSize = null) {
   ctx.imageSmoothingEnabled = false;
 
   const sourceMetrics = getPreviewDrawMetrics(canvas, image, referenceSize);
-  const dragging = Boolean(state.batchEdit?.drag && batchEditAppliesToCanvas(canvas));
+  const drag = state.batchEdit?.drag;
+  const dragging = Boolean(drag && batchEditAppliesToCanvas(canvas));
   const applyBatch = !dragging && batchEditActive() && batchEditAppliesToCanvas(canvas);
 
-  if (dragging) {
+  if (dragging && drag.kind === "crop") {
     ctx.drawImage(
       image,
       sourceMetrics.drawX,
@@ -4125,7 +4411,37 @@ function paintFrameOnCanvas(canvas, image, referenceSize = null) {
         imageHeight: image.naturalHeight,
       },
       state.batchEdit.rect,
-      state.batchEdit.drag.rect
+      drag.rect
+    );
+    return;
+  }
+
+  if (dragging && drag.kind === "feather") {
+    // Show live feather while drawing.
+    if (batchEditActive()) {
+      const edited = createBatchEditedImageSource(image);
+      const drawWidth = edited.width * sourceMetrics.baseScale;
+      const drawHeight = edited.height * sourceMetrics.baseScale;
+      const drawX = Math.round((canvas.width - drawWidth) / 2);
+      const drawY = Math.round((canvas.height - drawHeight) / 2);
+      ctx.drawImage(edited.canvas, drawX, drawY, drawWidth, drawHeight);
+    } else {
+      ctx.drawImage(
+        image,
+        sourceMetrics.drawX,
+        sourceMetrics.drawY,
+        sourceMetrics.drawWidth,
+        sourceMetrics.drawHeight
+      );
+    }
+    drawBatchFeatherOverlay(
+      ctx,
+      {
+        ...sourceMetrics,
+        imageWidth: image.naturalWidth,
+        imageHeight: image.naturalHeight,
+      },
+      drag
     );
     return;
   }
@@ -4137,6 +4453,23 @@ function paintFrameOnCanvas(canvas, image, referenceSize = null) {
     const drawX = Math.round((canvas.width - drawWidth) / 2);
     const drawY = Math.round((canvas.height - drawHeight) / 2);
     ctx.drawImage(edited.canvas, drawX, drawY, drawWidth, drawHeight);
+    if (
+      state.batchEdit.featherEnabled
+      && (state.batchEdit.featherBounds || (state.batchEdit.featherPoints || []).length >= 2)
+    ) {
+      // Overlay shape outline on uncropped metrics only when no crop moved the image.
+      if (!edited.cropRect) {
+        drawBatchFeatherOverlay(
+          ctx,
+          {
+            ...sourceMetrics,
+            imageWidth: image.naturalWidth,
+            imageHeight: image.naturalHeight,
+          },
+          null
+        );
+      }
+    }
     return;
   }
 
@@ -4162,6 +4495,21 @@ function paintFrameOnCanvas(canvas, image, referenceSize = null) {
         imageHeight: image.naturalHeight,
       },
       state.batchEdit.rect,
+      null
+    );
+  }
+  if (
+    batchEditAppliesToCanvas(canvas)
+    && state.batchEdit?.featherEnabled
+    && (state.batchEdit.featherBounds || (state.batchEdit.featherPoints || []).length >= 2)
+  ) {
+    drawBatchFeatherOverlay(
+      ctx,
+      {
+        ...sourceMetrics,
+        imageWidth: image.naturalWidth,
+        imageHeight: image.naturalHeight,
+      },
       null
     );
   }

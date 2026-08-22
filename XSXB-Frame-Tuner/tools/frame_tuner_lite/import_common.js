@@ -103,6 +103,7 @@ module.exports = {
   animationDestination,
   assetVersion,
   copyStable,
+  loadManifest,
   naturalCompare,
   parseArgs,
   pngSize,
