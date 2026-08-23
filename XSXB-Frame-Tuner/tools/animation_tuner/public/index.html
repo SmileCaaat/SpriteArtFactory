@@ -93,6 +93,7 @@
             <label class="number stepNumber"><span data-i18n="offsetY">偏移 Y</span><span class="numberStepper"><button type="button" class="numberStep" data-step-target="baseY" data-step-dir="-1">&lsaquo;</button><input id="baseY" type="number" step="1" /><button type="button" class="numberStep" data-step-target="baseY" data-step-dir="1">&rsaquo;</button></span></label>
           </div>
           <button id="applyBaseToFrame" class="secondary" data-i18n="copyBaseToSelected" hidden>复制 Base 到选中帧</button>
+          <button id="rebaseGroupOrigin" type="button" class="secondary groupOriginAction" data-i18n="rebaseGroupOrigin" hidden>组原点归 0（仅当前序列）</button>
           <input id="characterBaseScale" type="hidden" readonly />
           <input id="characterBaseSource" type="hidden" readonly />
           <input id="frameScale" type="hidden" />
@@ -320,7 +321,7 @@
     <script src="/transform_selection.js?v=20260729-0217"></script>
     <script src="/animation_families.js?v=20260731-1"></script>
     <script src="/timing_modes.js?v=20260729-0217"></script>
-    <script src="/attack_trails.js?v=20260820-trail-persist"></script>
-    <script src="/app.js?v=20260816-batch-attach"></script>
+    <script src="/attack_trails.js?v=20260823-rebase-origin-v2"></script>
+    <script src="/app.js?v=20260823-rebase-origin-v2"></script>
   </body>
 </html>

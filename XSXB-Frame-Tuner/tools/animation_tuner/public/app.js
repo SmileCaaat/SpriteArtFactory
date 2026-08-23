@@ -75,6 +75,7 @@ const els = {
   playPause: document.querySelector("#playPause"),
   ghostToggle: document.querySelector("#ghostToggle"),
   applyBaseToFrame: document.querySelector("#applyBaseToFrame"),
+  rebaseGroupOrigin: document.querySelector("#rebaseGroupOrigin"),
   undo: document.querySelector("#undo"),
   undoTop: document.querySelector("#undoTop"),
   redoTop: document.querySelector("#redoTop"),
@@ -121,6 +122,10 @@ const I18N = {
     clearSelected: "清除选中帧",
     compareThenPlay: "对比 / 接着播放",
     coordHudIdle: "鼠标 -, - | 偏移 -, -",
+    offsetLayerCharacter: "角色",
+    offsetLayerGroup: "组",
+    offsetLayerFrame: "帧",
+    offsetLayerComposite: "合成",
     copyBaseToSelected: "复制 Base 到选中帧",
     deleteBoxSelected: "删除选中帧的碰撞框",
     disableFrame: "禁用此帧",
@@ -172,6 +177,9 @@ const I18N = {
     animationFamilyOther: "其他",
     animationFamilyCount: "{count} 个动作",
     groupBase: "组 Base",
+    rebaseGroupOrigin: "组原点归 0（仅当前序列）",
+    rebaseGroupOriginDone: "当前序列的组原点已归 0，画面不变；未改动角色层与其他序列。",
+    rebaseGroupOriginAlreadyZero: "当前序列的组 Base 偏移已在 0,0。",
     groupFps: "组 FPS",
     groupTimeConflict: "当前已经调过单帧时间。确认后会从当前总时长开始切换到组时间，并清除单帧时间设置。",
     groupTimeMs: "组时长",
@@ -287,6 +295,10 @@ const I18N = {
     clearSelected: "Clear selected",
     compareThenPlay: "Compare / then play",
     coordHudIdle: "Mouse -, - | Offset -, -",
+    offsetLayerCharacter: "Character",
+    offsetLayerGroup: "Group",
+    offsetLayerFrame: "Frame",
+    offsetLayerComposite: "Composite",
     copyBaseToSelected: "Copy base to selected",
     deleteBoxSelected: "Delete box on selected frames",
     disableFrame: "Disable frame",
@@ -338,6 +350,9 @@ const I18N = {
     animationFamilyOther: "Other",
     animationFamilyCount: "{count} actions",
     groupBase: "Group Base",
+    rebaseGroupOrigin: "Rebase group origin (this sequence only)",
+    rebaseGroupOriginDone: "Group origin reset for this sequence; visuals unchanged. Character layer and other sequences untouched.",
+    rebaseGroupOriginAlreadyZero: "This sequence's group base offset is already 0,0.",
     groupFps: "Group FPS",
     groupTimeConflict: "Frame timing has already been adjusted. Confirm to switch from the current total duration to group timing and clear frame duration overrides.",
     groupTimeMs: "Group duration",
@@ -3844,6 +3859,27 @@ function adjustmentTransform(mode = adjustmentMode) {
   return baseTransform();
 }
 
+function adjustmentModeOffsetLabel(mode = adjustmentMode) {
+  if (mode === "character") return t("offsetLayerCharacter");
+  if (mode === "frame") return t("offsetLayerFrame");
+  return t("offsetLayerGroup");
+}
+
+function compositeFrameOffset(index = selectedFrame, group = currentGroup) {
+  return renderTransformForGroup(frameTransform(index, group), group).offset;
+}
+
+function coordinateMarkerOffsets(index = selectedFrame, group = currentGroup) {
+  const editing = adjustmentTransform(adjustmentMode).offset;
+  const frameLevel = frameTransform(index, group).offset;
+  const composite = compositeFrameOffset(index, group);
+  return { editing, frameLevel, composite };
+}
+
+function offsetsNearlyEqual(a, b) {
+  return nearlyEqual(Number(a?.x || 0), Number(b?.x || 0)) && nearlyEqual(Number(a?.y || 0), Number(b?.y || 0));
+}
+
 function transformFromAdjustmentInputs() {
   const uniformScale = Number(els.baseScale.value);
   return {
@@ -3960,6 +3996,14 @@ function syncAdjustmentInputs() {
   if (els.applyBaseToFrame) {
     els.applyBaseToFrame.hidden = true;
     els.applyBaseToFrame.disabled = true;
+  }
+  if (els.rebaseGroupOrigin) {
+    const showRebase = adjustmentMode === "group"
+      && Boolean(currentGroup)
+      && canEditGroupTransform()
+      && !offsetsNearlyEqual(baseTransform(currentGroup).offset, { x: 0, y: 0 });
+    els.rebaseGroupOrigin.hidden = !showRebase;
+    els.rebaseGroupOrigin.disabled = !showRebase;
   }
 }
 
@@ -4957,9 +5001,29 @@ function drawCoordinateMarker(point, label, color) {
 
 function drawCoordinateMarkers() {
   if (!currentGroup || !images.length) return;
-  const currentOffset = frameTransform().offset;
-  const currentPoint = coordinateToScreen(currentOffset);
-  drawCoordinateMarker(currentPoint, `Current ${round(currentOffset.x)}, ${round(currentOffset.y)}`, "rgba(242, 162, 60, .96)");
+  const { editing, frameLevel, composite } = coordinateMarkerOffsets();
+  const editingPoint = coordinateToScreen(editing);
+  drawCoordinateMarker(
+    editingPoint,
+    `${adjustmentModeOffsetLabel()} ${round(editing.x)}, ${round(editing.y)}`,
+    "rgba(242, 162, 60, .96)"
+  );
+  if (adjustmentMode !== "frame" && !offsetsNearlyEqual(frameLevel, editing)) {
+    const framePoint = coordinateToScreen(frameLevel);
+    drawCoordinateMarker(
+      framePoint,
+      `${t("offsetLayerGroup")}/${t("offsetLayerFrame")} ${round(frameLevel.x)}, ${round(frameLevel.y)}`,
+      "rgba(145, 215, 255, .94)"
+    );
+  }
+  if (!offsetsNearlyEqual(composite, frameLevel) && !offsetsNearlyEqual(composite, editing)) {
+    const compositePoint = coordinateToScreen(composite);
+    drawCoordinateMarker(
+      compositePoint,
+      `${t("offsetLayerComposite")} ${round(composite.x)}, ${round(composite.y)}`,
+      "rgba(196, 146, 255, .94)"
+    );
+  }
   if (!coordinateOwnerGroup || !coordinateOwnerImages.length || coordinateOwnerGroup.uiId === currentGroup.uiId) return;
   const ownerIndex = coordinateOwnerFrameIndex();
   const ownerOffset = frameTransform(ownerIndex, coordinateOwnerGroup).offset;
@@ -4972,18 +5036,18 @@ function drawCoordinateMarkers() {
   ctx.setLineDash([7 * devicePixelRatio, 5 * devicePixelRatio]);
   ctx.beginPath();
   ctx.moveTo(ownerPoint.x, ownerPoint.y);
-  ctx.lineTo(currentPoint.x, currentPoint.y);
+  ctx.lineTo(editingPoint.x, editingPoint.y);
   ctx.stroke();
   ctx.setLineDash([]);
   const delta = {
-    x: currentOffset.x - ownerOffset.x,
-    y: currentOffset.y - ownerOffset.y,
+    x: editing.x - ownerOffset.x,
+    y: editing.y - ownerOffset.y,
   };
   ctx.font = `${12 * devicePixelRatio}px Consolas, "Cascadia Mono", monospace`;
   ctx.fillText(
     `delta ${round(delta.x)}, ${round(delta.y)}`,
-    (ownerPoint.x + currentPoint.x) * 0.5 + 8 * devicePixelRatio,
-    (ownerPoint.y + currentPoint.y) * 0.5 + 8 * devicePixelRatio
+    (ownerPoint.x + editingPoint.x) * 0.5 + 8 * devicePixelRatio,
+    (ownerPoint.y + editingPoint.y) * 0.5 + 8 * devicePixelRatio
   );
   ctx.restore();
 }
@@ -4995,16 +5059,22 @@ function updateCoordHud() {
     return;
   }
   const pointer = pointerStagePoint ? screenToCoordinate(pointerStagePoint) : null;
-  const currentOffset = frameTransform().offset;
+  const { editing, frameLevel, composite } = coordinateMarkerOffsets();
   const parts = [
     pointer ? `${language === "zh" ? "鼠标" : "Mouse"} ${round(pointer.x)}, ${round(pointer.y)}` : (language === "zh" ? "鼠标 -, -" : "Mouse -, -"),
-    `${language === "zh" ? "偏移" : "Offset"} ${round(currentOffset.x)}, ${round(currentOffset.y)}`,
+    `${adjustmentModeOffsetLabel()} ${round(editing.x)}, ${round(editing.y)}`,
   ];
+  if (adjustmentMode !== "frame" && !offsetsNearlyEqual(frameLevel, editing)) {
+    parts.push(`${t("offsetLayerGroup")}/${t("offsetLayerFrame")} ${round(frameLevel.x)}, ${round(frameLevel.y)}`);
+  }
+  if (!offsetsNearlyEqual(composite, frameLevel) && !offsetsNearlyEqual(composite, editing)) {
+    parts.push(`${t("offsetLayerComposite")} ${round(composite.x)}, ${round(composite.y)}`);
+  }
   if (coordinateOwnerGroup && coordinateOwnerImages.length && coordinateOwnerGroup.uiId !== currentGroup.uiId) {
     const ownerIndex = coordinateOwnerFrameIndex();
     const ownerOffset = frameTransform(ownerIndex, coordinateOwnerGroup).offset;
     parts.push(`${language === "zh" ? "参考" : "Owner"} ${round(ownerOffset.x)}, ${round(ownerOffset.y)}`);
-    parts.push(`${language === "zh" ? "差值" : "Delta"} ${round(currentOffset.x - ownerOffset.x)}, ${round(currentOffset.y - ownerOffset.y)}`);
+    parts.push(`${language === "zh" ? "差值" : "Delta"} ${round(editing.x - ownerOffset.x)}, ${round(editing.y - ownerOffset.y)}`);
   }
   els.coordHud.textContent = parts.join(" | ");
 }
@@ -5956,6 +6026,57 @@ function updateGroupPlaybackFromInputs() {
   els.fpsValue.textContent = round(groupPlaybackFps());
   updateGroupMeta();
   updateWorkbenchHud();
+}
+
+function rebaseGroupOriginToZero() {
+  if (!currentGroup || !canEditGroupTransform()) return;
+  const group = currentGroup;
+  const oldBase = baseTransform(group);
+  const baseDelta = cloneVector(oldBase.offset);
+  if (offsetsNearlyEqual(baseDelta, { x: 0, y: 0 })) {
+    status(t("rebaseGroupOriginAlreadyZero"));
+    return;
+  }
+  pushUndo("rebase group origin");
+  const frameCount = group.frames?.length || 0;
+  const captured = Array.from({ length: frameCount }, (_value, index) => structuredClone(frameTransform(index, group)));
+  const store = valueStore(group);
+  const overrides = overrideStore(group);
+  store[group.offset] = { x: 0, y: 0 };
+  const newBase = baseTransform(group);
+  for (let index = 0; index < frameCount; index += 1) {
+    const effective = captured[index];
+    const key = tuningFrameKey(index, group);
+    const scaleVector = { x: effective.scaleX, y: effective.scaleY };
+    if (
+      nearlyEqual(effective.scale, newBase.scale)
+      && nearlyEqual(scaleVector.x, newBase.scaleX)
+      && nearlyEqual(scaleVector.y, newBase.scaleY)
+      && nearlyEqual(effective.offset.x, newBase.offset.x)
+      && nearlyEqual(effective.offset.y, newBase.offset.y)
+      && nearlyEqual(effective.rotation, newBase.rotation)
+    ) {
+      delete overrides[key];
+      continue;
+    }
+    const data = {
+      visual_size: effective.scale,
+      offset: cloneVector(effective.offset),
+      rotation: Number(effective.rotation || 0),
+    };
+    if (!nearlyEqual(scaleVector.x, effective.scale) || !nearlyEqual(scaleVector.y, effective.scale)) {
+      data.visual_scale = scaleVector;
+    }
+    overrides[key] = data;
+  }
+  attackTrailEditor?.translateBindingLocalOffset(baseDelta);
+  baseEditSnapshot = null;
+  markDirty({ groupUiId: group.uiId });
+  syncFrameInputs();
+  renderFilmstrip();
+  updateGroupMeta();
+  draw();
+  status(t("rebaseGroupOriginDone"));
 }
 
 function updateBaseFromInputs(transform = transformFromAdjustmentInputs()) {
@@ -7241,6 +7362,12 @@ els.applyBaseToFrame.addEventListener("click", () => {
   renderFilmstrip();
   draw();
 });
+
+if (els.rebaseGroupOrigin) {
+  els.rebaseGroupOrigin.addEventListener("click", () => {
+    rebaseGroupOriginToZero();
+  });
+}
 
 if (els.undo) els.undo.addEventListener("click", undo);
 if (els.undoTop) els.undoTop.addEventListener("click", undo);

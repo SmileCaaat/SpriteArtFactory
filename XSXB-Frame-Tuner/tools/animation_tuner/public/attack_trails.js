@@ -464,6 +464,32 @@
       return clone(this.data);
     }
 
+    translateBindingLocalOffset(delta = {}) {
+      const dx = Number(delta?.x || 0);
+      const dy = Number(delta?.y || 0);
+      if (Math.abs(dx) < 0.0001 && Math.abs(dy) < 0.0001) return false;
+      const key = this._bindingKey();
+      if (!key) return false;
+      const segments = this.data.bindings[key];
+      if (!Array.isArray(segments) || !segments.length) return false;
+      let changed = false;
+      for (const segment of segments) {
+        for (const stick of segment.sticks || []) {
+          if (stick.top) {
+            stick.top.x = Number(stick.top.x || 0) + dx;
+            stick.top.y = Number(stick.top.y || 0) + dy;
+            changed = true;
+          }
+          if (stick.bottom) {
+            stick.bottom.x = Number(stick.bottom.x || 0) + dx;
+            stick.bottom.y = Number(stick.bottom.y || 0) + dy;
+          }
+        }
+      }
+      if (changed) this.hooks.markDirty?.();
+      return changed;
+    }
+
     restore(raw) {
       this.presetEditOriginal = null;
       this.data = this._normalizeData(raw);

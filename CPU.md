@@ -4,39 +4,28 @@ This branch targets **Windows + CPU-first** local setups for SpriteArtFactory.
 
 ## Goals
 
-- Prefer a local / sibling Python venv that already has **CPU torch** (for example `torch==…+cpu`).
-- Wire runtime assets through `sprite-video-lab-models/` next to the tools, without requiring `E:\` or a fixed machine path like `D:\A1Tools`.
+- Prefer a local Python venv with **CPU torch** (for example `torch==…+cpu`).
+- Keep runtime assets under `sprite-video-lab-models/` next to the tools—no second copy of SVL/XSXB outside this repo.
 - Do **not** force a local HTTP proxy for Hugging Face.
-- Keep large caches out of Git; reuse existing installs with **directory junctions** when you already have a tuned CPU environment.
+- Keep large caches out of Git; store venv/models under `sprite-video-lab-models/` (gitignored).
 
-## Expected layout
+## Expected layout (single tree)
 
 ```text
-SpriteArtFactory/
+D:\Tools\SpriteArtFactory\          ← clone + default branch: cpu
 ├── sprite-video-lab/
-│   ├── .venv/                      optional junction to shared CPU venv
+│   ├── .venv/                      junction → ..\sprite-video-lab-models\venv
 │   └── start_sprite_video_lab_a1.bat
-├── sprite-video-lab-models/
-│   ├── venv/                       CPU Python runtime (or junction)
-│   ├── huggingface/                BiRefNet cache (or junction)
-│   ├── EZ-CorridorKey/             CorridorKey tree (or junction)
-│   └── work/tools/realesrgan-…/    Real-ESRGAN portable package
+├── sprite-video-lab-models/        real dirs (not tracked by git)
+│   ├── venv/                       CPU Python runtime
+│   ├── huggingface/                BiRefNet cache
+│   ├── EZ-CorridorKey/
+│   └── work/tools/realesrgan-ncnn-vulkan/
 ├── XSXB-Frame-Tuner/
 └── start_sprite_art_factory.bat
 ```
 
-## Reuse an existing CPU venv (junction example)
-
-From an elevated or normal `cmd` (same volume):
-
-```bat
-mklink /J SpriteArtFactory\sprite-video-lab\.venv D:\Tools\sprite-video-lab\.venv
-mklink /J SpriteArtFactory\sprite-video-lab-models\venv D:\Tools\sprite-video-lab\.venv
-mklink /J SpriteArtFactory\sprite-video-lab-models\huggingface D:\Tools\sprite-video-lab\work\models\huggingface
-mklink /J SpriteArtFactory\sprite-video-lab-models\EZ-CorridorKey D:\Tools\sprite-video-lab\work\models\CorridorKey
-```
-
-Junctions preserve your existing CPU specialization; the factory only provides a second entry point.
+Do **not** maintain parallel `D:\Tools\sprite-video-lab` or `D:\Tools\XSXB-Frame-Tuner` trees; everything lives under `SpriteArtFactory/`.
 
 ## Start
 
@@ -45,8 +34,18 @@ Junctions preserve your existing CPU specialization; the factory only provides a
 
 `ffmpeg` / `ffprobe` should be on `PATH`, or set `SPRITE_VIDEO_LAB_FFMPEG_DIR`.
 
+## Git workflow (this machine)
+
+```bat
+cd D:\Tools\SpriteArtFactory
+git checkout cpu
+git pull
+```
+
+Feature work lands on `cpu` first; `main` is updated by merge when stable.
+
 ## Out of scope for this branch
 
 - CUDA / ROCm wheel pins
 - Checked-in model weights or venv contents
-- Machine-absolute paths (`D:\Tools\…`, `D:\A1Tools\…`)
+- Machine-absolute paths outside the repo (`D:\A1Tools\…`, duplicate tool roots)
