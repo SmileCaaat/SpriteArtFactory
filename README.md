@@ -122,6 +122,8 @@ start_sprite_art_factory.bat
 
 首次使用 Sprite Video Lab 时，建议让 Agent 按 [`sprite-video-lab/AGENT_INSTALL.md`](sprite-video-lab/AGENT_INSTALL.md) 安装 Python 虚拟环境与 ffmpeg。
 
+**Windows CPU 优先部署**（本地 venv / 目录联接复用已有 CPU torch、不强制代理）：见 [`CPU.md`](CPU.md) 与分支 `cpu`。
+
 XSXB 维护者可运行：
 
 ```powershell
