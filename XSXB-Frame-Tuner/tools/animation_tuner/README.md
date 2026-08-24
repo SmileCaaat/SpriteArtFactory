@@ -16,4 +16,6 @@ node tools\animation_tuner\server.js
 http://127.0.0.1:5179
 ```
 
+胶片条可重排帧顺序、删除单帧、插入空白透明帧；主缩略图仍只用于图层上下拖动。Codex 宠物项目不显示这些控件。
+
 常规工作流建议交给 `skills/xsxb-frame-tuner`：由 Agent 绑定 Godot 项目、批量导入 PNG 序列或 SpriteFrames、生成框体、同步并连接完整 runtime、运行严格验证，然后打开这个 Webapp 给人调参。

@@ -120,6 +120,10 @@ body.frameTunerLite .brand .mark {
   gap: 8px;
 }
 
+#liteImportPickPackage {
+  grid-column: 1 / -1;
+}
+
 .liteImportButton {
   width: 100%;
   background: var(--accent);

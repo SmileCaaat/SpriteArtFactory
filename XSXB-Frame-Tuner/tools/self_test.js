@@ -32,6 +32,19 @@ const {
   remapFrameOverrideDictionary,
 } = require("./frame_tuner_lite/server");
 const { cropFromEntry, frameEntries, importSheetAudio } = require("./frame_tuner_lite/import_sheet");
+const {
+  deleteMapper,
+  editFrameSequence,
+  insertMapper,
+  moveMapper,
+  neighborFrameSize,
+  remapFrameBindings,
+  remapOverrideDictionary,
+  remapTrailFrames,
+  transparentPng,
+  writeBlankFrameFile,
+} = require("./frame_sequence_edit");
+const { detectExportPackage, audioLookupKeys, isLiteBakedMeta } = require("./frame_tuner_lite/export_package");
 const { bindingScopeForProject, createProjectStore, projectEngine } = require("./project_store");
 const { syncGodotProject } = require("./godot_sync");
 const { buildRuntimeData } = require("./runtime_data");
@@ -607,7 +620,7 @@ assert.match(attackTrailEditorSource, /if \(this\.staticEditPreview\) \{\s*this\
 assert.match(attackTrailEditorSource, /isContinuous\(\) \{\s*if \(this\.staticEditPreview\) return false;/);
 assert.match(attackTrailEditorSource, /_usesFrameSlicesOnly\(\)/);
 assert.match(attackTrailEditorSource, /Object\.values\(segment\.frameSlices \|\| \{\}\)\.some/);
-assert.match(attackTrailEditorSource, /frameSlices: frameSlices \|\| \{\}/);
+assert.match(attackTrailEditorSource, /frameSlices: resolvedFrameSlices \|\| \{\}/);
 assert.match(attackTrailEditorSource, /_startFixedPreview\(\)[\s\S]*?this\.staticEditPreview = false;\s*this\.previewing = true;/);
 const tunerAppSource = fs.readFileSync(path.join(__dirname, "animation_tuner", "public", "app.js"), "utf8");
 const tunerStyleSource = fs.readFileSync(path.join(__dirname, "animation_tuner", "public", "style.css"), "utf8");
@@ -631,6 +644,9 @@ assert.match(tunerServerSource, /saveSharedAttackTrailPresets\(ROOT, project\.id
 assert.match(tunerServerSource, /const godotSync = engine === "godot" \? syncGodotProject\(ROOT, projectStore, project, syncOptions\) : null/);
 assert.match(tunerServerSource, /parsed\.pathname === "\/api\/duplicate-frame"/);
 assert.match(tunerServerSource, /duplicateProjectFrame\(project, payload\)/);
+assert.match(tunerServerSource, /parsed\.pathname === "\/api\/edit-frames"/);
+assert.match(tunerServerSource, /function editProjectFrames\(/);
+assert.match(tunerServerSource, /Codex Pets 序列帧不能增删或重排/);
 assert.match(tunerServerSource, /parsed\.pathname === "\/api\/frame-audio"[\s\S]*?configRevision: projectConfigRevision\(project\)/);
 assert.match(tunerServerSource, /payload\.allowEmpty !== true/);
 assert.match(tunerServerSource, /缺少可保存的音频数据或稳定路径/);
@@ -661,6 +677,16 @@ assert.match(tunerAppSource, /XsxbTimingModes\.bakedSequenceSamples\(playableFra
 assert.match(tunerAppSource, /if \(attackTrailEditor\?\.isContinuous\(\)\) return true/);
 assert.match(tunerAppSource, /data-action="duplicate-frame"/);
 assert.match(tunerAppSource, /async function duplicateFrameAfter\(/);
+assert.match(tunerAppSource, /data-action="delete-frame"/);
+assert.match(tunerAppSource, /data-action="insert-blank-frame"/);
+assert.match(tunerAppSource, /\/api\/edit-frames/);
+assert.match(tunerAppSource, /function setupFrameReorderHandle\(/);
+assert.match(tunerAppSource, /async function deleteSequenceFrame\(/);
+assert.match(tunerAppSource, /async function insertBlankFrameAfter\(/);
+assert.match(tunerStyleSource, /\.frameReorderHandle/);
+assert.match(tunerStyleSource, /\.frameDeleteButton/);
+assert.match(tunerHtmlSource, /<script src="\/app\.js\?/);
+assert.doesNotMatch(tunerHtmlSource, /app\.v20/);
 assert.match(tunerAppSource, /selectedGuidePreviewActive: \(\) => !playing && !Number\.isFinite\(liteExportTime\)/);
 assert.match(tunerAttackTrailSource, /isEditingWorkspace\(\) \{\s*return this\.enabled && \(this\.workspaceMode === "draw" \|\| this\.workspaceMode === "insert"\);/);
 assert.match(tunerAttackTrailSource, /this\.hooks\.attachmentEditingLockChanged\?\.\(locked\)/);
@@ -706,6 +732,18 @@ assert.doesNotMatch(liteUiSource, /id="litePhaseDurationMs"/);
 assert.doesNotMatch(liteUiSource, /id="liteExportFps"/);
 assert.match(liteUiSource, /导出 PNG 序列/);
 assert.match(liteUiSource, /导出 Sheet \+ JSON/);
+assert.match(liteUiSource, /Lite 导出包（反向导入）/);
+assert.match(liteUiSource, /liteImportPickPackage/);
+assert.match(liteUiSource, /id: "xsxb-lite-reimport"/);
+assert.ok("xsxb-lite-reimport".length <= 32);
+assert.ok("xsxb-frame-tuner-lite-sequence".length <= 32);
+assert.match(liteUiSource, /lite-export\.json/);
+assert.match(liteUiSource, /baked: true/);
+assert.match(liteServerSource, /export_package\.js/);
+assert.match(liteServerSource, /audioFiles: payload\.audioFiles/);
+assert.match(liteContractSource, /Lite 导出包（反向导入）/);
+assert.match(liteContractSource, /lite-export\.json/);
+assert.match(tunerAppSource, /fps: Number\(currentGroup\?\.speed \|\| 12\)/);
 assert.match(liteUiSource, /重新计算全角色画布/);
 assert.match(liteUiSource, /calculateOptimalLayout/);
 assert.match(liteUiSource, /collectExportGroups/);
@@ -729,12 +767,20 @@ assert.match(liteServerSource, /payload\.allowEmpty !== true/);
 assert.match(liteServerSource, /缺少可保存的音频数据或 Lite 稳定路径/);
 assert.match(liteServerSource, /url\.pathname === "\/api\/duplicate-frame"/);
 assert.match(liteServerSource, /function duplicateProjectFrame\(/);
+assert.match(liteServerSource, /url\.pathname === "\/api\/edit-frames"/);
+assert.match(liteServerSource, /function editLiteFrames\(/);
 assert.match(liteServerSource, /function projectConfigRevision\(/);
 assert.match(liteServerSource, /sharedAttackTrailPresetPath\(ROOT\)/);
 assert.match(liteServerSource, /saveSharedAttackTrailPresets\(ROOT, `lite:\$\{project\.id\}`, trails\.presets\)/);
 assert.match(liteServerSource, /code: "stale_config"/);
 assert.doesNotMatch(liteServerSource, /Lite 不绑定音效/);
 assert.match(liteContractSource, /portable audio files plus JSON events/);
+assert.match(liteContractSource, /insert-blank transparent PNG/);
+const uiContractSource = fs.readFileSync(path.join(__dirname, "..", "skills", "xsxb-frame-tuner", "references", "ui-contract.md"), "utf8");
+assert.match(uiContractSource, /## Sequence Frames/);
+assert.match(uiContractSource, /Do not reuse attachment-layer card dragging/);
+assert.match(uiContractSource, /Keep at least one frame/);
+assert.match(uiContractSource, /blank transparent PNG/);
 assert.match(liteContractSource, /must not create a duplicate `export\.json`/);
 assert.doesNotMatch(liteContractSource, /no audio/);
 assert.doesNotMatch(liteImportFramesSource, /parseCanvas/);
@@ -743,6 +789,25 @@ assert.deepEqual(frameEntries({ frames: [{ filename: "f2.png" }, { filename: "f1
 assert.deepEqual(frameEntries({ frames: { "f10.png": {}, "f2.png": {} } }).map(([name]) => name), ["f2.png", "f10.png"]);
 assert.deepEqual(cropFromEntry({ frame: { x: 4, y: 7, w: 20, h: 30 } }), { x: 4, y: 7, width: 20, height: 30 });
 assert.deepEqual(cropFromEntry({ crop: { left: 2, top: 3, width: 9, height: 11 } }), { x: 2, y: 3, width: 9, height: 11 });
+assert.deepEqual(
+  detectExportPackage([
+    "idle/spritesheet.png",
+    "idle/spritesheet.json",
+    "run/spritesheet.png",
+    "run/spritesheet.json",
+    "audio/hit.wav",
+    "lite-export.json",
+  ]).animations.map((entry) => `${entry.kind}:${entry.animationId}`),
+  ["sheet:idle", "sheet:run"],
+);
+assert.equal(detectExportPackage(["idle/spritesheet.png", "idle/spritesheet.json"]).manifestPath, "");
+assert.equal(detectExportPackage(["lite-export.json", "idle/spritesheet.png", "idle/spritesheet.json"]).manifestPath, "lite-export.json");
+assert.deepEqual(detectExportPackage(["audio/hit.wav"]).audioFiles, ["audio/hit.wav"]);
+assert.equal(detectExportPackage(["spritesheet.png", "spritesheet.json"], { rootName: "idle1" }).animations[0].animationId, "idle1");
+assert.equal(detectExportPackage(["attack/export.json", "attack/frame_0001.png"]).animations[0].kind, "sequence");
+assert.equal(isLiteBakedMeta({ meta: { app: "XSXB Frame Tuner Lite", canvas: { width: 8 } } }), true);
+assert.equal(isLiteBakedMeta({ frames: {} }), false);
+assert.ok(audioLookupKeys("../audio/hit.wav").includes("audio/hit.wav"));
 
 const normalizedTrails = normalizeAttackTrails({
   bindings: {
@@ -1076,6 +1141,123 @@ assert.deepEqual(Object.keys(duplicatedTrail.frameSlices), ["0", "1", "2"]);
 assert.deepEqual(duplicatedTrail.frameSlices["1"], duplicatedTrail.frameSlices["0"]);
 assert.deepEqual(duplicatedTrail.frameSlices["2"], { enabled: true, tailProgress: 0.4, headProgress: 1 });
 
+assert.deepEqual([0, 1, 2, 3].map(insertMapper(2)), [0, 1, 3, 4]);
+assert.deepEqual([0, 1, 2, 3].map(deleteMapper(1)), [0, null, 1, 2]);
+assert.deepEqual([0, 1, 2, 3].map(moveMapper(0, 2)), [2, 0, 1, 3]);
+assert.deepEqual([0, 1, 2, 3].map(moveMapper(3, 1)), [0, 2, 3, 1]);
+assert.deepEqual(remapOverrideDictionary({
+  "hero/attack:0": { duration: 2 },
+  "hero/attack:1": { duration: 3 },
+  "hero/attack:2": { duration: 4 },
+  "hero/idle:0": { duration: 9 },
+}, "hero/attack:", deleteMapper(1)), {
+  "hero/attack:0": { duration: 2 },
+  "hero/attack:1": { duration: 4 },
+  "hero/idle:0": { duration: 9 },
+});
+assert.deepEqual(remapFrameBindings([
+  { id: "keep", profileId: "hero", animation: "attack", frame: 0, key: "hero/attack:0", metadata: { profileId: "hero", animation: "attack", frame: 0 } },
+  { id: "drop", profileId: "hero", animation: "attack", frame: 1, key: "hero/attack:1", metadata: { profileId: "hero", animation: "attack", frame: 1 } },
+  { id: "shift", profileId: "hero", animation: "attack", frame: 2, key: "hero/attack:2", metadata: { profileId: "hero", animation: "attack", frame: 2 } },
+  { id: "other", profileId: "hero", animation: "idle", frame: 1, key: "hero/idle:1", metadata: { profileId: "hero", animation: "idle", frame: 1 } },
+], "hero", "attack", deleteMapper(1)).map((entry) => [entry.id, entry.frame, entry.key]), [
+  ["keep", 0, "hero/attack:0"],
+  ["shift", 1, "hero/attack:1"],
+  ["other", 1, "hero/idle:1"],
+]);
+const remappedTrail = remapTrailFrames({
+  bindings: {
+    "hero/attack": [{
+      sticks: [{ frame: 0 }, { frame: 1 }, { frame: 2 }],
+      frameSlices: {
+        0: { enabled: true },
+        1: { enabled: false },
+        2: { enabled: true },
+      },
+    }],
+  },
+}, "hero/attack", moveMapper(2, 0)).bindings["hero/attack"][0];
+assert.deepEqual(remappedTrail.sticks.map((stick) => stick.frame), [1, 2, 0]);
+assert.deepEqual(remappedTrail.frameSlices, {
+  1: { enabled: true },
+  2: { enabled: false },
+  0: { enabled: true },
+});
+const blankPng = transparentPng(4, 3);
+assert.equal(pngInfo(blankPng).width, 4);
+assert.equal(pngInfo(blankPng).height, 3);
+assert.equal(pngInfo(blankPng).hasEffectiveAlpha, true);
+const sequenceEditRoot = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-frame-edit-"));
+const writtenBlank = writeBlankFrameFile(path.join(sequenceEditRoot, "frames"), 4, 3, sequenceEditRoot);
+assert.match(writtenBlank.path, /^frames\/blank_[0-9a-f]+\.png$/);
+assert.equal(pngInfo(fs.readFileSync(writtenBlank.full)).width, 4);
+const editedSequence = editFrameSequence({
+  frames: [{ id: "a" }, { id: "b" }, { id: "c" }],
+  tuning: {
+    frame_visual_overrides: { "hero/attack:0": { x: 1 }, "hero/attack:2": { x: 3 } },
+    frame_playback_overrides: { "hero/attack:1": { duration: 8 } },
+    frame_box_overrides: {},
+  },
+  audio: [{ id: "sfx", profileId: "hero", animation: "attack", frame: 1, key: "hero/attack:1", metadata: { profileId: "hero", animation: "attack", frame: 1 } }],
+  attachments: [{ id: "layer", profileId: "hero", animation: "attack", frame: 2, key: "hero/attack:2", metadata: { profileId: "hero", animation: "attack", frame: 2 } }],
+  trails: { bindings: { "hero/attack": [{ sticks: [{ frame: 2 }], frameSlices: { 2: { enabled: true } } }] } },
+  profileId: "hero",
+  animationId: "attack",
+  action: "delete",
+  frameIndex: 1,
+});
+assert.deepEqual(editedSequence.frames.map((frame) => frame.id), ["a", "c"]);
+assert.equal(editedSequence.selectedIndex, 1);
+assert.deepEqual(editedSequence.tuning.frame_visual_overrides, { "hero/attack:0": { x: 1 }, "hero/attack:1": { x: 3 } });
+assert.deepEqual(editedSequence.tuning.frame_playback_overrides, {});
+assert.equal(editedSequence.audio.length, 0);
+assert.equal(editedSequence.attachments[0].frame, 1);
+assert.deepEqual(editedSequence.trails.bindings["hero/attack"][0].sticks.map((stick) => stick.frame), [1]);
+const movedSequence = editFrameSequence({
+  frames: [{ id: "a" }, { id: "b" }, { id: "c" }],
+  tuning: { frame_visual_overrides: { "hero/attack:0": { x: 1 } }, frame_playback_overrides: {}, frame_box_overrides: {} },
+  audio: [],
+  attachments: [],
+  trails: { bindings: {} },
+  profileId: "hero",
+  animationId: "attack",
+  action: "move",
+  frameIndex: 0,
+  toIndex: 2,
+});
+assert.deepEqual(movedSequence.frames.map((frame) => frame.id), ["b", "c", "a"]);
+assert.equal(movedSequence.selectedIndex, 2);
+assert.deepEqual(movedSequence.tuning.frame_visual_overrides, { "hero/attack:2": { x: 1 } });
+const insertedSequence = editFrameSequence({
+  frames: [{ id: "a", width: 8, height: 6, duration: 2 }, { id: "b" }],
+  tuning: { frame_visual_overrides: { "hero/attack:1": { x: 2 } }, frame_playback_overrides: {}, frame_box_overrides: {} },
+  audio: [{ id: "sfx", profileId: "hero", animation: "attack", frame: 0, key: "hero/attack:0", metadata: { profileId: "hero", animation: "attack", frame: 0 } }],
+  attachments: [],
+  trails: { bindings: {} },
+  profileId: "hero",
+  animationId: "attack",
+  action: "insert-blank",
+  frameIndex: 0,
+  blankFrame: { id: "blank", name: "空白帧", path: "frames/blank.png", width: 8, height: 6, duration: 2 },
+});
+assert.deepEqual(insertedSequence.frames.map((frame) => frame.id), ["a", "blank", "b"]);
+assert.equal(insertedSequence.selectedIndex, 1);
+assert.equal(insertedSequence.audio[0].frame, 0);
+assert.deepEqual(insertedSequence.tuning.frame_visual_overrides, { "hero/attack:2": { x: 2 } });
+assert.deepEqual(neighborFrameSize([{ width: 12, height: 9, duration: 3 }], 0), { width: 12, height: 9, duration: 3 });
+assert.throws(() => editFrameSequence({
+  frames: [{ id: "only" }],
+  tuning: {},
+  audio: [],
+  attachments: [],
+  trails: {},
+  profileId: "hero",
+  animationId: "attack",
+  action: "delete",
+  frameIndex: 0,
+}), /至少保留一帧/);
+fs.rmSync(sequenceEditRoot, { recursive: true, force: true });
+
 function tinyPng(colorType, pixelBytes) {
   const chunk = (type, data) => {
     const length = Buffer.alloc(4);
@@ -1208,6 +1390,8 @@ try {
   assert.equal(fs.existsSync(paths.settings), true);
   assert.equal(paths.workspaceDir.startsWith(path.resolve(liteStoreTestRoot)), true);
   const { importPngFrames } = require("./frame_tuner_lite/import_payload");
+  const { store: payloadStore } = require("./frame_tuner_lite/import_common");
+  const payloadPaths = payloadStore.paths(project);
   const tinyPng = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAD0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
     "base64",
@@ -1226,12 +1410,12 @@ try {
     animationId: "cast",
   });
   assert.deepEqual(deletedAnimation.removedAnimations, ["cast"]);
-  const manifestAfterDelete = liteStore.readJson(paths.manifest, { profiles: [] });
+  const manifestAfterDelete = payloadStore.readJson(payloadPaths.manifest, { profiles: [] });
   assert.equal(manifestAfterDelete.profiles.some((entry) => entry.id === "spell_test"), true);
   assert.equal((manifestAfterDelete.profiles.find((entry) => entry.id === "spell_test")?.animations || []).length, 0);
   const deletedProfile = require("./frame_tuner_lite/lite_delete").deleteLiteProfile(project, { profileId: "spell_test" });
   assert.equal(deletedProfile.profileId, "spell_test");
-  assert.equal(liteStore.readJson(paths.manifest, { profiles: [] }).profiles.length, 0);
+  assert.equal(payloadStore.readJson(payloadPaths.manifest, { profiles: [] }).profiles.some((entry) => entry.id === "spell_test"), false);
   const exportedAnimationDirectory = path.join(liteStoreTestRoot, "portable_export", "idle");
   const exportedAudioDirectory = path.join(liteStoreTestRoot, "portable_export", "audio");
   fs.mkdirSync(exportedAnimationDirectory, { recursive: true });
@@ -1262,6 +1446,28 @@ try {
   assert.equal(importedAudio[0].type, "audio/wav");
   assert.equal(importedAudio[0].path.startsWith("workspace/lite/projects/demo_project/audio/"), true);
   assert.equal(fs.readFileSync(path.join(liteStoreTestRoot, ...importedAudio[0].path.split("/"))).subarray(0, 4).toString("ascii"), "RIFF");
+  const memoryAudioCount = importSheetAudio({
+    project,
+    profileId: "hero",
+    animationId: "run",
+    animationType: "actor",
+    outputPath: "workspace/lite/projects/demo_project/assets/hero/run/sheet.png",
+    jsonPath: path.join(liteStoreTestRoot, "missing-batch", "run", "spritesheet.json"),
+    liteStore,
+    root: liteStoreTestRoot,
+    audioFiles: [{ file: "audio/hit.wav", buffer: Buffer.from("RIFFmemory-lite-audio", "ascii") }],
+    source: {
+      audio: {
+        files: [{ id: "audio_2", name: "hit.wav", file: "../audio/hit.wav", type: "audio/wav" }],
+        events: [{ outputFrameIndex: 0, assetId: "audio_2", file: "../audio/hit.wav" }],
+      },
+    },
+  });
+  assert.equal(memoryAudioCount, 1);
+  const memoryAudio = liteStore.readJson(paths.frameAudio, []).find((entry) => entry.animation === "hero/run");
+  assert.equal(memoryAudio.frame, 0);
+  assert.equal(memoryAudio.type, "audio/wav");
+  assert.equal(fs.readFileSync(path.join(liteStoreTestRoot, ...memoryAudio.path.split("/"))).subarray(0, 4).toString("ascii"), "RIFF");
 } finally {
   const resolvedLiteStoreTestRoot = path.resolve(liteStoreTestRoot);
   const resolvedSystemTemp = path.resolve(os.tmpdir());

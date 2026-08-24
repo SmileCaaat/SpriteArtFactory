@@ -3,6 +3,7 @@ const path = require("node:path");
 const {
   ROOT,
   animationDestination,
+  applyLiteCanvas,
   assetVersion,
   loadManifest,
   naturalCompare,
@@ -13,6 +14,8 @@ const {
   store,
 } = require("./import_common");
 const { cropFromEntry, frameEntries, importSheetAudio } = require("./import_sheet");
+const { isLiteBakedMeta } = require("./export_package");
+const { purgeTuningForAnimation } = require("./lite_delete");
 
 const PNG_DATA_URL = /^data:image\/png;base64,([A-Za-z0-9+/=\r\n]+)$/i;
 
@@ -71,15 +74,19 @@ function importPngFrames(project, params) {
   }
 
   const destination = animationDestination(project, profileId, animationId);
+  const durationMsByName = params.durationMsByName instanceof Map
+    ? params.durationMsByName
+    : new Map(Object.entries(params.durationMsByName || {}));
   const frames = files.map((file, index) => {
     const outputName = `frame_${String(index + 1).padStart(4, "0")}.png`;
     const output = writeStableBuffer(file.buffer, path.join(destination, outputName));
     const size = pngSize(output);
+    const durationMs = Number(durationMsByName.get(file.name) || durationMsByName.get(outputName) || 0);
     return {
       id: `frame_${String(index + 1).padStart(4, "0")}`,
       name: file.name,
       path: reslash(path.relative(ROOT, output)),
-      duration: 1,
+      duration: durationMs > 0 ? durationMs / (1000 / fps) : 1,
       width: size.width,
       height: size.height,
       assetVersion: assetVersion(output),
@@ -99,7 +106,36 @@ function importPngFrames(project, params) {
     independentPlayback: layer.independentPlayback,
     frames,
   };
-  saveAnimation({ project, profileId, profileLabel, animation });
+  if (params.json && (isLiteBakedMeta(params.json) || params.json.kind === "sequence")) {
+    const tuning = store.readJson(store.paths(project).tuning, { schemaVersion: 1, values: {} });
+    purgeTuningForAnimation(tuning, profileId, animationId);
+    store.writeJson(store.paths(project).tuning, tuning);
+  }
+  saveAnimation({
+    project,
+    profileId,
+    profileLabel,
+    animation,
+    resetCanvas: params.resetCanvas !== false && !params.canvas,
+  });
+  if (params.canvas) applyLiteCanvas(project, params.canvas);
+  let audioCount = 0;
+  if (params.json?.audio && typeof params.json.audio === "object") {
+    const jsonPath = path.join(destination, "export.json");
+    fs.writeFileSync(jsonPath, `${JSON.stringify(params.json, null, 2)}\n`, "utf8");
+    audioCount = importSheetAudio({
+      project,
+      profileId,
+      animationId,
+      animationType: animation.type,
+      outputPath: animation.source,
+      jsonPath,
+      source: params.json,
+      audioFiles: params.audioFiles,
+      liteStore: store,
+      root: ROOT,
+    });
+  }
   return {
     project: project.id,
     profileId,
@@ -108,6 +144,7 @@ function importPngFrames(project, params) {
     frames: frames.length,
     fps,
     type: animation.type,
+    audio: audioCount,
   };
 }
 
@@ -160,14 +197,24 @@ function importPngSheet(project, params) {
     independentPlayback: layer.independentPlayback,
     frames,
   };
-  saveAnimation({ project, profileId, profileLabel, animation });
+  if (isLiteBakedMeta(source)) {
+    const tuning = store.readJson(store.paths(project).tuning, { schemaVersion: 1, values: {} });
+    purgeTuningForAnimation(tuning, profileId, animationId);
+    store.writeJson(store.paths(project).tuning, tuning);
+  }
+  saveAnimation({
+    project,
+    profileId,
+    profileLabel,
+    animation,
+    resetCanvas: params.resetCanvas !== false && !params.canvas,
+  });
+  if (params.canvas) applyLiteCanvas(project, params.canvas);
 
   let audioCount = 0;
   if (source.audio && typeof source.audio === "object") {
     const jsonPath = path.join(destination, "sheet.json");
-    if (!fs.existsSync(jsonPath)) {
-      fs.writeFileSync(jsonPath, `${JSON.stringify(source, null, 2)}\n`, "utf8");
-    }
+    fs.writeFileSync(jsonPath, `${JSON.stringify(source, null, 2)}\n`, "utf8");
     audioCount = importSheetAudio({
       project,
       profileId,
@@ -176,6 +223,7 @@ function importPngSheet(project, params) {
       outputPath,
       jsonPath,
       source,
+      audioFiles: params.audioFiles,
       liteStore: store,
       root: ROOT,
     });

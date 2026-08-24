@@ -1,4 +1,4 @@
-﻿const els = {
+const els = {
   updatePanel: document.querySelector("#updatePanel"),
   updateVersion: document.querySelector("#updateVersion"),
   updateMessage: document.querySelector("#updateMessage"),
@@ -177,9 +177,9 @@ const I18N = {
     animationFamilyOther: "其他",
     animationFamilyCount: "{count} 个动作",
     groupBase: "组 Base",
-    rebaseGroupOrigin: "组原点归 0（仅当前序列）",
-    rebaseGroupOriginDone: "当前序列的组原点已归 0，画面不变；未改动角色层与其他序列。",
-    rebaseGroupOriginAlreadyZero: "当前序列的组 Base 偏移已在 0,0。",
+    rebaseGroupOrigin: "原点归 0（保持画面）",
+    rebaseGroupOriginDone: "组原点已归 0，画面位置保持不变。",
+    rebaseGroupOriginAlreadyZero: "组原点已在 0,0。",
     groupFps: "组 FPS",
     groupTimeConflict: "当前已经调过单帧时间。确认后会从当前总时长开始切换到组时间，并清除单帧时间设置。",
     groupTimeMs: "组时长",
@@ -350,9 +350,9 @@ const I18N = {
     animationFamilyOther: "Other",
     animationFamilyCount: "{count} actions",
     groupBase: "Group Base",
-    rebaseGroupOrigin: "Rebase group origin (this sequence only)",
-    rebaseGroupOriginDone: "Group origin reset for this sequence; visuals unchanged. Character layer and other sequences untouched.",
-    rebaseGroupOriginAlreadyZero: "This sequence's group base offset is already 0,0.",
+    rebaseGroupOrigin: "Rebase origin to 0,0",
+    rebaseGroupOriginDone: "Group origin reset to 0,0; visuals unchanged.",
+    rebaseGroupOriginAlreadyZero: "Group origin is already at 0,0.",
     groupFps: "Group FPS",
     groupTimeConflict: "Frame timing has already been adjusted. Confirm to switch from the current total duration to group timing and clear frame duration overrides.",
     groupTimeMs: "Group duration",
@@ -527,10 +527,12 @@ const FRAME_AUDIO_DB_NAME = "xsxb-frame-tuner-frame-audio";
 const FRAME_AUDIO_DB_VERSION = 1;
 const FRAME_AUDIO_STORE = "frameAudio";
 const LAYER_CARD_DRAG_TYPE = "application/x-xsxb-layer-card";
+const FRAME_REORDER_TYPE = "application/x-xsxb-frame-reorder";
 let frameAudioDbPromise = null;
 let frameAudioSyncPromise = null;
 let imageElements = new Map();
 let layerCardDrag = null;
+let frameReorderDrag = null;
 let showBoxes = localStorage.getItem(BOX_PREF_KEYS.show) === "true";
 let boxOnlyMode = false;
 let selectedBox = localStorage.getItem(BOX_PREF_KEYS.selected) || "";
@@ -3998,10 +4000,7 @@ function syncAdjustmentInputs() {
     els.applyBaseToFrame.disabled = true;
   }
   if (els.rebaseGroupOrigin) {
-    const showRebase = adjustmentMode === "group"
-      && Boolean(currentGroup)
-      && canEditGroupTransform()
-      && !offsetsNearlyEqual(baseTransform(currentGroup).offset, { x: 0, y: 0 });
+    const showRebase = adjustmentMode === "group" && Boolean(currentGroup) && canEditGroupTransform();
     els.rebaseGroupOrigin.hidden = !showRebase;
     els.rebaseGroupOrigin.disabled = !showRebase;
   }
@@ -4169,8 +4168,14 @@ function clearLayerDragPreview() {
 }
 
 function isLayerCardDragEvent(event) {
+  if (isFrameReorderDragEvent(event)) return false;
   return Boolean(layerCardDrag)
     || Array.from(event.dataTransfer?.types || []).includes(LAYER_CARD_DRAG_TYPE);
+}
+
+function isFrameReorderDragEvent(event) {
+  return Boolean(frameReorderDrag)
+    || Array.from(event.dataTransfer?.types || []).includes(FRAME_REORDER_TYPE);
 }
 
 function movedLayerCardOrder(dragInfo, insertionIndex, group = currentGroup) {
@@ -4268,7 +4273,7 @@ function setupLayerCardDrag(card, info) {
   card.classList.add("layerDraggable");
   card.dataset.layerCardKey = layerCardDomKey(info);
   card.addEventListener("dragstart", (event) => {
-    if (event.target.closest(".attachmentAction, .durationStep, .frameSfxBadge")) {
+    if (event.target.closest(".attachmentAction, .durationStep, .frameSfxBadge, .frameCopyButton, .frameDeleteButton, .frameReorderHandle")) {
       event.preventDefault();
       return;
     }
@@ -4440,14 +4445,147 @@ async function duplicateFrameAfter(index, group) {
   status(`已复制第 ${index + 1} 帧，并插入到右侧。`);
 }
 
+function sequenceAnimationId(group) {
+  const runtimeAnimation = String(group?.runtimeAnimation || group?.name || "");
+  return runtimeAnimation.includes("/")
+    ? runtimeAnimation.slice(runtimeAnimation.lastIndexOf("/") + 1)
+    : runtimeAnimation;
+}
+
+function canEditSequenceFrames(group = currentGroup) {
+  return Boolean(group)
+    && group.uiId === currentGroup?.uiId
+    && config?.projectKind !== "codex_pets"
+    && Boolean(group.profileId);
+}
+
+function dropBeforeIndexToMoveIndex(fromIndex, dropBefore, length) {
+  let toIndex = Math.max(0, Math.min(length, Number(dropBefore) || 0));
+  if (fromIndex < toIndex) toIndex -= 1;
+  return Math.max(0, Math.min(length - 1, toIndex));
+}
+
+function frameReorderDropBefore(event, group) {
+  const stacks = [...els.filmstrip.querySelectorAll(`.frameStack[data-group-ui="${CSS.escape(group.uiId)}"]`)];
+  if (!stacks.length) return group.frames.length;
+  for (const stack of stacks) {
+    const rect = stack.getBoundingClientRect();
+    if (event.clientX < rect.left + rect.width * 0.5) return Number(stack.dataset.frameIndex);
+  }
+  return group.frames.length;
+}
+
+function clearFrameReorderPreview() {
+  document.querySelectorAll(".frameStackDropBefore, .frameStackDropAfter").forEach((node) => {
+    node.classList.remove("frameStackDropBefore", "frameStackDropAfter");
+  });
+}
+
+async function editSequenceFrames(action, { frameIndex, toIndex, group = currentGroup } = {}) {
+  if (!canEditSequenceFrames(group)) return;
+  if (dirty) await save();
+  const animationId = sequenceAnimationId(group);
+  const groupIdentity = {
+    profileId: group.profileId,
+    runtimeAnimation: String(group.runtimeAnimation || group.name || ""),
+    name: group.name,
+  };
+  const res = await fetch("/api/edit-frames", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      projectId: activeProjectId(),
+      configRevision: config?.configRevision || "",
+      profileId: group.profileId,
+      animationId,
+      action,
+      frameIndex,
+      toIndex,
+    }),
+  });
+  if (!res.ok) {
+    const errorPayload = await res.json().catch(() => ({}));
+    if (res.status === 409 && errorPayload.code === "stale_config") {
+      throw new Error(t("staleSaveBlocked"));
+    }
+    throw new Error(errorPayload.error || res.statusText);
+  }
+  const result = await res.json().catch(() => ({}));
+  await loadConfig();
+  const editedGroup = config.groups.find((entry) => (
+    entry.profileId === groupIdentity.profileId
+    && String(entry.runtimeAnimation || entry.name || "") === groupIdentity.runtimeAnimation
+  )) || config.groups.find((entry) => entry.profileId === groupIdentity.profileId && entry.name === groupIdentity.name);
+  if (editedGroup) {
+    await selectGroup(editedGroup, {
+      frameIndex: Number(result.frameIndex ?? frameIndex ?? 0),
+      preserveView: true,
+    });
+  }
+  return result;
+}
+
+async function deleteSequenceFrame(index, group) {
+  if (!canEditSequenceFrames(group)) return;
+  if (group.frames.length <= 1) throw new Error("至少保留一帧。");
+  if (!window.confirm(`删除第 ${index + 1} 帧？未保存的编辑会先保存。`)) return;
+  await editSequenceFrames("delete", { frameIndex: index, group });
+  status(`已删除第 ${index + 1} 帧。`);
+}
+
+async function insertBlankFrameAfter(index, group) {
+  if (!canEditSequenceFrames(group)) return;
+  const result = await editSequenceFrames("insert-blank", { frameIndex: index, group });
+  status(`已在第 ${index + 1} 帧后插入空白帧。`);
+  return result;
+}
+
+async function moveSequenceFrame(fromIndex, toIndex, group) {
+  if (!canEditSequenceFrames(group) || fromIndex === toIndex) return;
+  await editSequenceFrames("move", { frameIndex: fromIndex, toIndex, group });
+  status(`已将第 ${fromIndex + 1} 帧移到第 ${toIndex + 1} 位。`);
+}
+
+function setupFrameReorderHandle(stack, index, group) {
+  if (!canEditSequenceFrames(group)) return;
+  const handle = document.createElement("button");
+  handle.type = "button";
+  handle.className = "frameReorderHandle";
+  handle.draggable = true;
+  handle.title = "拖动调整帧顺序";
+  handle.setAttribute("aria-label", "拖动调整帧顺序");
+  handle.textContent = "⋮⋮";
+  handle.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  });
+  handle.addEventListener("dragstart", (event) => {
+    event.stopPropagation();
+    frameReorderDrag = { index, groupUiId: group.uiId };
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", `frame:${index}`);
+    event.dataTransfer.setData(FRAME_REORDER_TYPE, String(index));
+    stack.classList.add("frameStackDragging");
+  });
+  handle.addEventListener("dragend", () => {
+    frameReorderDrag = null;
+    stack.classList.remove("frameStackDragging");
+    clearFrameReorderPreview();
+  });
+  stack.prepend(handle);
+}
+
 function renderFilmstripGroup(group, label) {
   const store = overrideStore(group);
   const isCurrent = group.uiId === currentGroup.uiId;
   group.frames.forEach((frame, index) => {
     const stack = document.createElement("div");
     stack.className = "frameStack";
+    stack.dataset.frameIndex = String(index);
+    stack.dataset.groupUi = group.uiId;
     const stackItems = frameLayerStackItems(index, group);
     setupLayerStackDrag(stack, index, group);
+    setupFrameReorderHandle(stack, index, group);
 
     const playback = framePlayback(index, group);
     const item = document.createElement("button");
@@ -4458,11 +4596,14 @@ function renderFilmstripGroup(group, label) {
     item.title = `${label}${index + 1} - ${frame.name}${sourceLabel}`;
     const canAdjustDuration = isCurrent && canEditFramePlayback(group) && !usesAttachedPlaybackTiming(group);
     const canDuplicate = isCurrent && config?.projectKind !== "codex_pets" && Boolean(group.profileId);
+    const canEditFrames = canEditSequenceFrames(group);
+    const canDeleteFrame = canEditFrames && group.frames.length > 1;
     const audioBadge = audioBinding
       ? `<span class="frameSfxBadge" data-action="delete-sfx" role="button" tabindex="0" title="${escapeHtml(audioBinding.name || "audio")}"><span class="frameSfxSpeaker" aria-hidden="true">&#128266;</span><span class="frameSfxRemove" aria-hidden="true">x</span></span>`
       : "";
     item.innerHTML = `
       ${audioBadge}
+      ${canDeleteFrame ? `<span class="frameDeleteButton" data-action="delete-frame" role="button" tabindex="0" title="删除此帧">×</span>` : ""}
       ${frameThumbnailMarkup(frame)}
       <span class="thumbLabel">${label}${index + 1}</span>
       <div class="thumbDuration">
@@ -4470,6 +4611,7 @@ function renderFilmstripGroup(group, label) {
         <b>${frameDurationMsLabel(index, group)}</b>
         <button class="durationStep" data-delta="${FRAME_DURATION_STEP_MS}" ${canAdjustDuration ? "" : "disabled"} title="+${FRAME_DURATION_STEP_MS}ms">+</button>
         <span class="frameCopyButton ${canDuplicate ? "" : "disabled"}" data-action="duplicate-frame" role="button" tabindex="${canDuplicate ? "0" : "-1"}" aria-disabled="${canDuplicate ? "false" : "true"}" title="复制本帧并插入右侧">⧉</span>
+        <span class="frameCopyButton ${canEditFrames ? "" : "disabled"}" data-action="insert-blank-frame" role="button" tabindex="${canEditFrames ? "0" : "-1"}" aria-disabled="${canEditFrames ? "false" : "true"}" title="在右侧插入空白帧">+</span>
       </div>`;
     const sfxBadge = item.querySelector(".frameSfxBadge");
     if (sfxBadge) {
@@ -4489,6 +4631,7 @@ function renderFilmstripGroup(group, label) {
       item.addEventListener(eventName, (event) => {
         if (!canDropOnFrame) return;
         if (isLayerCardDragEvent(event)) return;
+        if (isFrameReorderDragEvent(event)) return;
         const items = Array.from(event.dataTransfer?.items || []);
         const hasFile = items.some((entry) => entry.kind === "file")
           || Array.from(event.dataTransfer?.types || []).includes("Files")
@@ -4519,6 +4662,7 @@ function renderFilmstripGroup(group, label) {
     item.addEventListener("drop", async (event) => {
       if (!canDropOnFrame) return;
       if (isLayerCardDragEvent(event)) return;
+      if (isFrameReorderDragEvent(event)) return;
       event.preventDefault();
       event.stopPropagation();
       item.classList.remove("audioDragOver", "imageDragOver");
@@ -4569,6 +4713,40 @@ function renderFilmstripGroup(group, label) {
       copyButton.addEventListener("keydown", async (event) => {
         if (event.key !== "Enter" && event.key !== " ") return;
         await duplicate(event);
+      });
+    }
+    const blankButton = item.querySelector('[data-action="insert-blank-frame"]');
+    if (blankButton && canEditFrames) {
+      const insertBlank = async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        try {
+          await insertBlankFrameAfter(index, group);
+        } catch (error) {
+          status(`添加空白帧失败：${error.message}`);
+        }
+      };
+      blankButton.addEventListener("click", insertBlank);
+      blankButton.addEventListener("keydown", async (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        await insertBlank(event);
+      });
+    }
+    const deleteButton = item.querySelector('[data-action="delete-frame"]');
+    if (deleteButton && canDeleteFrame) {
+      const removeFrame = async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        try {
+          await deleteSequenceFrame(index, group);
+        } catch (error) {
+          status(`删除帧失败：${error.message}`);
+        }
+      };
+      deleteButton.addEventListener("click", removeFrame);
+      deleteButton.addEventListener("keydown", async (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        await removeFrame(event);
       });
     }
     item.addEventListener("click", async (event) => {
@@ -6032,8 +6210,8 @@ function rebaseGroupOriginToZero() {
   if (!currentGroup || !canEditGroupTransform()) return;
   const group = currentGroup;
   const oldBase = baseTransform(group);
-  const baseDelta = cloneVector(oldBase.offset);
-  if (offsetsNearlyEqual(baseDelta, { x: 0, y: 0 })) {
+  const delta = cloneVector(oldBase.offset);
+  if (offsetsNearlyEqual(delta, { x: 0, y: 0 })) {
     status(t("rebaseGroupOriginAlreadyZero"));
     return;
   }
@@ -6069,9 +6247,9 @@ function rebaseGroupOriginToZero() {
     }
     overrides[key] = data;
   }
-  attackTrailEditor?.translateBindingLocalOffset(baseDelta);
+  attackTrailEditor?.translateBindingLocalOffset(delta);
   baseEditSnapshot = null;
-  markDirty({ groups: [group] });
+  markDirty();
   syncFrameInputs();
   renderFilmstrip();
   updateGroupMeta();
@@ -7467,8 +7645,44 @@ if (els.importAttachmentsButton && els.importAttachmentsInput) {
 if (els.filmstrip) {
   for (const eventName of ["dragenter", "dragover"]) {
     els.filmstrip.addEventListener(eventName, (event) => {
+      if (!canEditSequenceFrames(currentGroup) || !isFrameReorderDragEvent(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.dataTransfer.dropEffect = "move";
+      const dropBefore = frameReorderDropBefore(event, currentGroup);
+      clearFrameReorderPreview();
+      const stacks = [...els.filmstrip.querySelectorAll(`.frameStack[data-group-ui="${CSS.escape(currentGroup.uiId)}"]`)];
+      const target = stacks.find((stack) => Number(stack.dataset.frameIndex) === dropBefore)
+        || stacks[stacks.length - 1];
+      if (!target) return;
+      target.classList.add(Number(target.dataset.frameIndex) === dropBefore ? "frameStackDropBefore" : "frameStackDropAfter");
+    });
+  }
+  els.filmstrip.addEventListener("drop", async (event) => {
+    if (!canEditSequenceFrames(currentGroup) || !isFrameReorderDragEvent(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const fromIndex = Number(frameReorderDrag?.index);
+    const dropBefore = frameReorderDropBefore(event, currentGroup);
+    const toIndex = dropBeforeIndexToMoveIndex(fromIndex, dropBefore, currentGroup.frames.length);
+    frameReorderDrag = null;
+    clearFrameReorderPreview();
+    if (!Number.isInteger(fromIndex) || fromIndex === toIndex) return;
+    try {
+      await moveSequenceFrame(fromIndex, toIndex, currentGroup);
+    } catch (error) {
+      status(`调整帧顺序失败：${error.message}`);
+    }
+  });
+  els.filmstrip.addEventListener("dragleave", (event) => {
+    if (event.currentTarget.contains(event.relatedTarget)) return;
+    clearFrameReorderPreview();
+  });
+  for (const eventName of ["dragenter", "dragover"]) {
+    els.filmstrip.addEventListener(eventName, (event) => {
       if (!currentGroup || config?.projectKind === "codex_pets") return;
       if (isLayerCardDragEvent(event)) return;
+      if (isFrameReorderDragEvent(event)) return;
       if (event.target.closest?.(".thumb")) return;
       const imageFiles = imageFilesFromList(event.dataTransfer?.files);
       const items = Array.from(event.dataTransfer?.items || []);
@@ -7488,6 +7702,7 @@ if (els.filmstrip) {
   els.filmstrip.addEventListener("drop", async (event) => {
     if (!currentGroup || config?.projectKind === "codex_pets") return;
     if (isLayerCardDragEvent(event)) return;
+    if (isFrameReorderDragEvent(event)) return;
     if (event.target.closest?.(".thumb")) return;
     const imageFiles = imageFilesFromList(event.dataTransfer?.files);
     if (!imageFiles.length) return;
@@ -7849,6 +8064,7 @@ window.XsxbFrameTunerLite = {
     animationName: currentGroup?.name || currentGroup?.animationId || "",
     groupId: currentGroup?.uiId || "",
     frameCount: currentGroup?.frames?.length || 0,
+    fps: Number(currentGroup?.speed || 12),
     settings: structuredClone(config?.liteSettings || {}),
   }),
   timeline: () => liteExportTimeline(),

@@ -23,7 +23,7 @@ For non-Godot sequence work or Frame Tuner Lite tasks, read [references/lite-con
 
 ## Frame Tuner Lite
 
-Choose Lite when the requested deliverable is transparent PNG frames or a sprite sheet rather than a wired game runtime. It reuses the editor's timing, transforms, collision-box metadata, image layers, attack trails, and frame-bound SFX. Lite SFX stays inside the isolated workspace and exports as portable audio assets plus JSON frame events; Lite deliberately excludes Godot sync and gameplay validation.
+Choose Lite when the requested deliverable is transparent PNG frames or a sprite sheet rather than a wired game runtime. It reuses the editor's timing, transforms, collision-box metadata, image layers, attack trails, and frame-bound SFX. Full and Lite filmstrips can reorder frames with the stack grab handle, delete a frame after confirmation (keep at least one), and insert a blank transparent PNG; hide these controls for Codex Pets. Lite SFX stays inside the isolated workspace and exports as portable audio assets plus JSON frame events; Lite deliberately excludes Godot sync and gameplay validation.
 
 The Agent must import all source material without changing its source canvas, copy it into stable Lite paths, validate the isolated project, start the Lite service, and exercise a real browser export. Calculate one uniform canvas for the current character only when exporting, after all of that character's groups and visible layers have been measured. Do not ask the user to run the importer manually. Do not alter the Full Tuner project registry or active Godot project.
 

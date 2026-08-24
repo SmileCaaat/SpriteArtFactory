@@ -9,6 +9,7 @@
     pendingFrames: [],
     pendingSheetPng: null,
     pendingSheetJson: null,
+    pendingPackage: null,
   };
 
   const number = (value, min, max, fallback) => {
@@ -125,12 +126,16 @@
             <span>来源格式</span>
             <select id="liteImportSource">
               <option value="frames">PNG 文件夹</option>
-              <option value="sheet">Sheet + JSON</option>
+              <option value="export_package">Lite 导出包（反向导入）</option>
+              <option value="sheet">Sheet PNG + JSON 文件</option>
             </select>
           </label>
+          <p id="liteImportSourceHint" class="liteImportSequenceHint">PNG 文件夹用于原始序列。导出包用于把「导出 Sheet + JSON」或「导出 PNG 序列」的批次文件夹整包导回来继续改。</p>
           <div class="liteImportPickRow">
             <button id="liteImportPickFrames" type="button" class="secondary">选择 PNG 文件夹</button>
-            <button id="liteImportPickSheet" type="button" class="secondary" hidden>选择 Sheet + JSON</button>
+            <button id="liteImportPickPackage" type="button" class="secondary" hidden>选择导出文件夹</button>
+            <button id="liteImportPickSheetPng" type="button" class="secondary" hidden>选择 Sheet PNG</button>
+            <button id="liteImportPickSheetJson" type="button" class="secondary" hidden>选择 Sheet JSON</button>
           </div>
           <input id="liteImportFramesInput" type="file" accept="image/png,.png" webkitdirectory multiple hidden />
           <input id="liteImportSheetPngInput" type="file" accept="image/png,.png" hidden />
@@ -196,26 +201,30 @@
     input("liteImportAnimationPreset").addEventListener("change", applyAnimationPresetSelection);
     input("liteImportAnimationId").addEventListener("input", syncAnimationPresetFromInput);
     input("liteImportPickFrames").addEventListener("click", () => framesInput.click());
-    input("liteImportPickSheet").addEventListener("click", () => sheetPngInput.click());
+    input("liteImportPickSheetPng").addEventListener("click", () => sheetPngInput.click());
+    input("liteImportPickSheetJson").addEventListener("click", () => sheetJsonInput.click());
+    input("liteImportPickPackage").addEventListener("click", () => pickExportPackage().catch((error) => setImportStatus(error.message)));
     framesInput.addEventListener("change", () => {
       state.pendingFrames = [...framesInput.files || []].filter((file) => /\.png$/i.test(file.name));
       state.pendingSheetPng = null;
       state.pendingSheetJson = null;
+      state.pendingPackage = null;
       renderImportSelection();
     });
     sheetPngInput.addEventListener("change", () => {
       const file = sheetPngInput.files?.[0];
       if (!file) return;
       state.pendingSheetPng = file;
-      sheetJsonInput.value = "";
-      sheetJsonInput.click();
+      state.pendingPackage = null;
+      renderImportSelection();
     });
     sheetJsonInput.addEventListener("change", async () => {
       const file = sheetJsonInput.files?.[0];
-      if (!file || !state.pendingSheetPng) return;
+      if (!file) return;
       try {
         state.pendingSheetJson = JSON.parse(await file.text());
         state.pendingFrames = [];
+        state.pendingPackage = null;
         renderImportSelection();
       } catch (error) {
         state.pendingSheetJson = null;
@@ -422,15 +431,112 @@
   function renderImportSelection() {
     const node = input("liteImportSelection");
     if (!node) return;
+    if (state.pendingPackage?.animations?.length) {
+      const names = state.pendingPackage.animations.map((entry) => entry.animationId).join("、");
+      const audio = state.pendingPackage.audioFiles?.length ? `，音效 ${state.pendingPackage.audioFiles.length} 个` : "";
+      node.textContent = `已识别导出包 ${state.pendingPackage.animations.length} 组：${names}${audio}`;
+      return;
+    }
     if (state.pendingFrames.length) {
       node.textContent = `已选 ${state.pendingFrames.length} 张 PNG`;
       return;
     }
-    if (state.pendingSheetPng && state.pendingSheetJson) {
-      node.textContent = `已选 Sheet：${state.pendingSheetPng.name} + JSON`;
+    if (state.pendingSheetPng || state.pendingSheetJson) {
+      const pngName = state.pendingSheetPng?.name || "未选 PNG";
+      const jsonName = state.pendingSheetJson ? "JSON 已选" : "未选 JSON";
+      node.textContent = `已选 Sheet：${pngName} + ${jsonName}`;
       return;
     }
     node.textContent = "尚未选择文件";
+  }
+
+  async function readDirectoryFiles(directory, prefix = "", depth = 0) {
+    const files = [];
+    if (depth > 5) return files;
+    for await (const [name, handle] of directory.entries()) {
+      const relative = prefix ? `${prefix}/${name}` : name;
+      if (handle.kind === "file") files.push({ relative, name, handle });
+      else if (handle.kind === "directory") files.push(...await readDirectoryFiles(handle, relative, depth + 1));
+    }
+    return files;
+  }
+
+  async function fileFromHandle(handle) {
+    return handle.getFile();
+  }
+
+  async function pickExportPackage() {
+    if (typeof window.showDirectoryPicker !== "function") {
+      throw new Error("当前浏览器不支持文件夹选择；请使用最新版 Edge 或 Chrome 打开本地 Lite 页面。");
+    }
+    const detect = window.XsxbLiteExportPackage?.detectExportPackage;
+    if (typeof detect !== "function") throw new Error("导出包识别脚本未加载，请刷新 Lite 页面。");
+    const directory = await window.showDirectoryPicker({
+      id: "xsxb-lite-reimport",
+      mode: "read",
+    });
+    setImportStatus("正在识别导出包…");
+    const entries = await readDirectoryFiles(directory);
+    const detected = detect(entries.map((entry) => entry.relative), { rootName: directory.name });
+    if (!detected.animations.length) {
+      throw new Error("这个文件夹里没有 spritesheet.png + spritesheet.json，也没有 export.json。请选择一次导出生成的批次文件夹。");
+    }
+    const byRelative = new Map(entries.map((entry) => [entry.relative.replaceAll("\\", "/"), entry]));
+    const animations = [];
+    for (const animation of detected.animations) {
+      const next = { ...animation };
+      if (animation.kind === "sheet") {
+        const pngEntry = byRelative.get(animation.sheetPng);
+        const jsonEntry = byRelative.get(animation.sheetJson);
+        if (!pngEntry || !jsonEntry) throw new Error(`导出包缺少 ${animation.animationId} 的 spritesheet.png / spritesheet.json。`);
+        next.sheetPngFile = await fileFromHandle(pngEntry.handle);
+        next.sheetJsonObject = JSON.parse(await (await fileFromHandle(jsonEntry.handle)).text());
+        next.animationId = slugId(next.sheetJsonObject?.meta?.animationId || animation.animationId, animation.animationId);
+      } else {
+        next.exportJsonObject = JSON.parse(await (await fileFromHandle(byRelative.get(animation.exportJson).handle)).text());
+        next.frameFiles = [];
+        for (const relative of animation.frames || []) {
+          const entry = byRelative.get(relative);
+          if (entry) next.frameFiles.push(await fileFromHandle(entry.handle));
+        }
+        next.animationId = slugId(next.exportJsonObject?.animationId || animation.animationId, animation.animationId);
+      }
+      animations.push(next);
+    }
+    const audioFiles = [];
+    for (const relative of detected.audioFiles || []) {
+      const entry = byRelative.get(relative);
+      if (!entry) continue;
+      const file = await fileFromHandle(entry.handle);
+      audioFiles.push({ file: relative, blob: file });
+    }
+    let manifest = null;
+    if (detected.manifestPath && byRelative.get(detected.manifestPath)) {
+      manifest = JSON.parse(await (await fileFromHandle(byRelative.get(detected.manifestPath).handle)).text());
+    }
+    const firstMeta = animations[0]?.sheetJsonObject?.meta || animations[0]?.exportJsonObject || {};
+    state.pendingPackage = {
+      folderName: directory.name,
+      animations,
+      audioFiles,
+      manifest,
+      profileId: slugId(manifest?.profileId || firstMeta.profileId || "", ""),
+      profileLabel: String(manifest?.profileLabel || firstMeta.profileLabel || "").trim(),
+      canvas: manifest?.canvas || firstMeta.canvas || animations[0]?.exportJsonObject?.canvas || null,
+    };
+    state.pendingFrames = [];
+    state.pendingSheetPng = null;
+    state.pendingSheetJson = null;
+    if (state.pendingPackage.profileLabel) {
+      const labelInput = input("liteImportProfileLabel");
+      const idInput = input("liteImportProfileId");
+      if (labelInput && !labelInput.value.trim()) labelInput.value = state.pendingPackage.profileLabel;
+      if (idInput && !idInput.value.trim()) {
+        idInput.value = state.pendingPackage.profileId || slugId(state.pendingPackage.profileLabel, "material_set");
+      }
+    }
+    renderImportSelection();
+    setImportStatus(`已识别 ${animations.length} 组，点击开始导入。导出包已烘焙变换，建议新建素材集导入。`);
   }
 
   function syncImportForm() {
@@ -442,10 +548,16 @@
     const currentProfile = input("liteImportCurrentProfile");
     const attachFields = input("liteImportAttachFields");
     const pickFrames = input("liteImportPickFrames");
-    const pickSheet = input("liteImportPickSheet");
+    const pickPackage = input("liteImportPickPackage");
+    const pickSheetPng = input("liteImportPickSheetPng");
+    const pickSheetJson = input("liteImportPickSheetJson");
+    const sequenceField = document.querySelector(".liteImportSequenceField");
+    const fpsField = document.querySelector(".liteImportFpsField");
+    const sourceHint = input("liteImportSourceHint");
     const submit = input("liteImportSubmit");
     const needsNewProfile = kind === "new_character" || kind === "new_skill";
     const needsCurrentProfile = kind === "sequence" || kind === "vfx_layer";
+    const packageMode = source === "export_package";
     if (profileFields) profileFields.hidden = !needsNewProfile;
     if (currentProfile) {
       currentProfile.hidden = !needsCurrentProfile;
@@ -454,8 +566,19 @@
         : "请先在上方选择一个素材集，或改为新建素材集。";
     }
     if (attachFields) attachFields.hidden = kind !== "vfx_layer";
+    if (sequenceField) sequenceField.hidden = packageMode;
+    if (fpsField) fpsField.hidden = packageMode;
+    if (sourceHint) {
+      sourceHint.textContent = packageMode
+        ? "选择一次导出生成的批次文件夹（里面有各动作子目录，以及可选的 audio/）。不要只选某一个动作子目录，否则音效可能导不回来。"
+        : source === "sheet"
+          ? "分别选择 spritesheet.png 和 spritesheet.json。若有音效，请改用「Lite 导出包」选择整个批次文件夹。"
+          : "PNG 文件夹用于原始序列。导出包用于把已导出的 Sheet + JSON 或 PNG 序列整包导回来继续改。";
+    }
     if (pickFrames) pickFrames.hidden = source !== "frames";
-    if (pickSheet) pickSheet.hidden = source !== "sheet";
+    if (pickPackage) pickPackage.hidden = source !== "export_package";
+    if (pickSheetPng) pickSheetPng.hidden = source !== "sheet";
+    if (pickSheetJson) pickSheetJson.hidden = source !== "sheet";
     if (kind === "vfx_layer") populateAttachToSelect(profileId);
     const blocked = needsCurrentProfile && !profileId;
     if (submit) submit.disabled = blocked || state.importing;
@@ -492,12 +615,15 @@
 
   function resolveImportTarget() {
     const kind = input("liteImportKind")?.value || "new_skill";
+    const packageMode = (input("liteImportSource")?.value || "frames") === "export_package";
     const animationId = slugId(input("liteImportAnimationId")?.value, "");
-    if (!animationId) throw new Error("请填写序列 ID。");
+    if (!packageMode && !animationId) throw new Error("请填写序列 ID。");
     const fps = number(input("liteImportFps")?.value, 0.1, 240, 12);
     if (kind === "new_character" || kind === "new_skill") {
-      const profileLabel = String(input("liteImportProfileLabel")?.value || "").trim();
-      const profileId = slugId(input("liteImportProfileId")?.value || profileLabel, "material_set");
+      const packageProfileLabel = state.pendingPackage?.profileLabel || "";
+      const packageProfileId = state.pendingPackage?.profileId || "";
+      const profileLabel = String(input("liteImportProfileLabel")?.value || packageProfileLabel).trim();
+      const profileId = slugId(input("liteImportProfileId")?.value || profileLabel || packageProfileId, "material_set");
       if (!profileLabel) throw new Error("请填写素材集名称。");
       return {
         profileId,
@@ -527,6 +653,13 @@
     return { profileId, profileLabel, animationId, fps, attachTo: "", layer: "front" };
   }
 
+  async function importAudioFilesPayload(audioFiles) {
+    return Promise.all((audioFiles || []).map(async (entry) => ({
+      file: entry.file,
+      data: await readFileDataUrl(entry.blob),
+    })));
+  }
+
   async function submitImport() {
     if (state.importing) return;
     const api = window.XsxbFrameTunerLite;
@@ -535,50 +668,79 @@
     const source = input("liteImportSource")?.value || "frames";
     const target = resolveImportTarget();
     if (source === "frames" && !state.pendingFrames.length) throw new Error("请先选择 PNG 文件夹。");
-    if (source === "sheet" && (!state.pendingSheetPng || !state.pendingSheetJson)) throw new Error("请先选择 Sheet PNG 和 JSON。");
+    if (source === "sheet" && (!state.pendingSheetPng || !state.pendingSheetJson)) throw new Error("请先分别选择 Sheet PNG 和 JSON。");
+    if (source === "export_package" && !state.pendingPackage?.animations?.length) throw new Error("请先选择 Lite 导出文件夹。");
+    if (source === "export_package" && target.attachTo) throw new Error("导出包是已烘焙的主动作，请用新建素材集或向当前素材集追加序列，不要作为附着特效导入。");
     state.importing = true;
     input("liteImportSubmit").disabled = true;
     setImportStatus("正在读取并上传素材…");
     try {
-      const payload = {
-        projectId: current.projectId,
-        source,
-        ...target,
-      };
-      if (source === "frames") {
-        payload.frames = await Promise.all(state.pendingFrames.map(async (file) => ({
-          name: file.name,
-          data: await readFileDataUrl(file),
-        })));
-      } else {
-        payload.sheetData = await readFileDataUrl(state.pendingSheetPng);
-        payload.json = state.pendingSheetJson;
-      }
-      const response = await fetch("/api/lite/import-animation", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!response.ok) {
-        let message = await response.text();
-        try {
-          const parsed = JSON.parse(message);
-          message = parsed.error || message;
-        } catch {
-          // keep raw text
+      let imported = {};
+      if (source === "export_package") {
+        const audioFiles = await importAudioFilesPayload(state.pendingPackage.audioFiles);
+        const canvas = state.pendingPackage.canvas;
+        for (let index = 0; index < state.pendingPackage.animations.length; index += 1) {
+          const animation = state.pendingPackage.animations[index];
+          setImportStatus(`正在导入 ${index + 1}/${state.pendingPackage.animations.length} · ${animation.animationId}`);
+          const isLast = index === state.pendingPackage.animations.length - 1;
+          const payload = {
+            projectId: current.projectId,
+            profileId: target.profileId,
+            profileLabel: target.profileLabel,
+            animationId: animation.animationId,
+            resetCanvas: false,
+            canvas: isLast ? canvas : undefined,
+            audioFiles,
+          };
+          if (animation.kind === "sheet") {
+            payload.source = "sheet";
+            payload.fps = number(animation.sheetJsonObject?.meta?.frameRate, 0.1, 240, target.fps);
+            payload.sheetData = await readFileDataUrl(animation.sheetPngFile);
+            payload.json = animation.sheetJsonObject;
+          } else {
+            payload.source = "frames";
+            payload.fps = number(animation.exportJsonObject?.frameRate, 0.1, 240, target.fps);
+            payload.json = animation.exportJsonObject;
+            payload.frames = await Promise.all((animation.frameFiles || []).map(async (file) => ({
+              name: file.name,
+              data: await readFileDataUrl(file),
+            })));
+            payload.durationMsByName = Object.fromEntries((animation.exportJsonObject?.frames || []).map((frame) => [
+              frame.filename,
+              Number(frame.durationMs || frame.duration || 0),
+            ]));
+          }
+          const result = await postImportPayload(payload);
+          imported = result.imported || imported;
         }
-        throw new Error(message || "导入失败。");
+      } else {
+        const payload = {
+          projectId: current.projectId,
+          source,
+          ...target,
+        };
+        if (source === "frames") {
+          payload.frames = await Promise.all(state.pendingFrames.map(async (file) => ({
+            name: file.name,
+            data: await readFileDataUrl(file),
+          })));
+        } else {
+          payload.sheetData = await readFileDataUrl(state.pendingSheetPng);
+          payload.json = state.pendingSheetJson;
+        }
+        const result = await postImportPayload(payload);
+        imported = result.imported || {};
       }
-      const result = await response.json();
-      const imported = result.imported || {};
       state.pendingFrames = [];
       state.pendingSheetPng = null;
       state.pendingSheetJson = null;
+      state.pendingPackage = null;
       input("liteImportFramesInput").value = "";
       input("liteImportSheetPngInput").value = "";
       input("liteImportSheetJsonInput").value = "";
       renderImportSelection();
-      setImportStatus(`导入完成：${imported.profileLabel || imported.profileId}/${imported.animationId}（${imported.frames} 帧）`);
+      const count = source === "export_package" ? "导出包" : `${imported.frames} 帧`;
+      setImportStatus(`导入完成：${imported.profileLabel || imported.profileId}/${imported.animationId}（${count}）`);
       window.dispatchEvent(new CustomEvent("xsxb-lite-imported", {
         detail: {
           profileId: imported.profileId,
@@ -590,6 +752,25 @@
       state.importing = false;
       syncImportForm();
     }
+  }
+
+  async function postImportPayload(payload) {
+    const response = await fetch("/api/lite/import-animation", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      let message = await response.text();
+      try {
+        const parsed = JSON.parse(message);
+        message = parsed.error || message;
+      } catch {
+        // keep raw text
+      }
+      throw new Error(message || "导入失败。");
+    }
+    return response.json();
   }
 
   function initialize() {
@@ -815,7 +996,7 @@
     await writeBlob(directory, filename, new Blob([`${JSON.stringify(value, null, 2)}\n`], { type: "application/json" }));
   }
 
-  function sheetJson(metadataFrames, sheet, canvas, audio) {
+  function sheetJson(metadataFrames, sheet, canvas, audio, extra = {}) {
     const integerDurations = window.XsxbTimingModes.distributeIntegerMilliseconds(
       metadataFrames.map((frame) => frame.durationMs),
     );
@@ -835,6 +1016,11 @@
         format: "RGBA8888",
         size: { w: sheet.width, h: sheet.height },
         canvas,
+        baked: true,
+        profileId: extra.profileId || "",
+        profileLabel: extra.profileLabel || "",
+        animationId: extra.animationId || "",
+        frameRate: extra.frameRate || 12,
       },
       audio,
     };
@@ -1000,15 +1186,24 @@
         if (kind === "sheet") {
           status.textContent = `正在写入 ${groupIndex + 1}/${batch.targets.length} · ${target.name} Sheet + JSON`;
           await writeDataUrl(targetDirectory, "spritesheet.png", sheet.toDataURL("image/png"));
-          await writeJson(targetDirectory, "spritesheet.json", sheetJson(metadataFrames, { width: sheetWidth, height: sheetHeight }, state.layout, audio));
+          await writeJson(targetDirectory, "spritesheet.json", sheetJson(metadataFrames, { width: sheetWidth, height: sheetHeight }, state.layout, audio, {
+            profileId: selected.profileId,
+            profileLabel: selected.profileLabel,
+            animationId: selected.animationId,
+            frameRate: selected.fps,
+          }));
         }
         if (kind === "sequence") {
           await writeJson(targetDirectory, "export.json", {
             schemaVersion: 1,
+            app: "XSXB Frame Tuner Lite",
             profileId: selected.profileId,
+            profileLabel: selected.profileLabel,
             animationId: selected.animationId,
+            frameRate: selected.fps,
             canvas: { ...state.layout, autoMeasured: true },
             kind,
+            baked: true,
             audio,
             frames: metadataFrames,
             completedAt: new Date().toISOString(),
@@ -1016,6 +1211,18 @@
         }
         totalFrames += samples.length;
       }
+      await writeJson(batchDirectory, "lite-export.json", {
+        schemaVersion: 1,
+        app: "XSXB Frame Tuner Lite",
+        kind,
+        profileId: current.profileId,
+        profileLabel: current.profileLabel,
+        canvas: state.layout,
+        animations: batch.targets.map((target) => ({
+          id: target.animationId,
+          folder: safeFolderName(target.animationId),
+        })),
+      });
       status.textContent = kind === "sheet"
         ? `已导出当前角色 ${batch.targets.length} 组 Sheet + JSON（共 ${totalFrames} 帧）\n${chosenDirectory.name}\\${batchName}`
         : `已导出当前角色 ${batch.targets.length} 组 PNG 序列（共 ${totalFrames} 帧）\n${chosenDirectory.name}\\${batchName}`;

@@ -9,6 +9,12 @@
 - Distinguish rendered attack-trail head frames from path-only guide sticks, with compact five-button stick controls shared by Full and Lite.
 - Add portable frame-bound SFX to Frame Tuner Lite exports and restore those bindings when a Lite sprite sheet is imported again.
 - Make Lite export every playable source frame exactly once as a baked owner/attachment/trail composite, with authored frame durations retained as metadata.
+- Reverse-import Lite Sheet + JSON (and PNG sequence) export batches from the UI by selecting the batch folder, restoring animations, audio, and the character canvas.
+- Reorder, delete, and insert blank frames in the Full and Lite filmstrips. Blank frames are transparent PNGs; Codex Pets stays read-only for sequence length.
+
+### Documentation
+
+- Document filmstrip sequence editing and Lite export-package reverse import in the tuner README, Lite/UI contracts, and local feature notes.
 
 ### Fixes
 
@@ -19,6 +25,7 @@
 - Require explicit per-frame trail insertion in Lite; legacy stick-only paths remain editable but no longer render or export automatically.
 - Distribute integer Sheet durations without changing the animation total.
 - Make `spritesheet.json` the sole descriptor for Sheet exports; PNG sequence exports continue to use `export.json`.
+- Let the Lite UI re-import a Sheet + JSON export batch as a new editable material set instead of requiring disconnected PNG/JSON file picks.
 
 ## 0.3.0 - 2026-07-22
 

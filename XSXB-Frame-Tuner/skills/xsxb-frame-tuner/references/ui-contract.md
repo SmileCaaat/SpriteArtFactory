@@ -29,6 +29,13 @@ Read this reference only when changing the tuner UI, save payload, or direct-man
 - Persist both new data bindings and existing path-only bindings across Save and reload.
 - Treat browser IndexedDB as a blob cache only; it must not recreate deleted or cross-project bindings.
 
+## Sequence Frames
+
+- Reorder frames with the grab handle on each filmstrip stack, dropping into the gap before or after another stack. Do not reuse attachment-layer card dragging for sequence order, and do not drag the main thumbnail to reorder frames.
+- Delete a frame with the card × control. Confirm first. Keep at least one frame.
+- Insert a blank transparent PNG to the right of the current frame with the card + control. Size and duration come from the neighboring frame; do not copy SFX, attachments, or trails onto the blank frame.
+- Hide sequence reorder, delete, and blank-frame controls for Codex Pets projects.
+
 ## Image Attachments
 
 - Put attachments in the owner frame's card stack.

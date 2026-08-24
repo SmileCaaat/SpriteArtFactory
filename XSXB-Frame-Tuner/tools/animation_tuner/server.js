@@ -32,6 +32,7 @@ const {
 const { checkForUpdates, performUpdate } = require("../updater");
 const { withUtf8Charset } = require("../http_content_type");
 const { frameBoxCoverageIssues } = require("../box_estimator");
+const { editFrameSequence, neighborFrameSize, writeBlankFrameFile } = require("../frame_sequence_edit");
 
 const ROOT = path.resolve(__dirname, "..", "..");
 const PUBLIC = path.join(__dirname, "public");
@@ -1307,6 +1308,76 @@ function duplicateProjectFrame(project, payload) {
   };
 }
 
+function editProjectFrames(project, payload) {
+  if (project.kind === "codex_pets") throw new Error("Codex Pets 序列帧不能增删或重排。");
+  const profileId = String(payload.profileId || "");
+  const animationId = String(payload.animationId || "");
+  const action = String(payload.action || "");
+  projectStore.ensureProjectFiles(project);
+  const paths = projectStore.projectPaths(project);
+  const manifest = projectStore.readJson(paths.manifest, EMPTY_MANIFEST);
+  const profile = manifest.profiles.find((entry) => String(entry.id) === profileId);
+  const animation = profile?.animations?.find((entry) => String(entry.id || entry.name) === animationId);
+  const frames = Array.isArray(animation?.frames) ? animation.frames : null;
+  if (!profile || !animation || !frames) throw new Error(`Animation not found: ${profileId}/${animationId}`);
+
+  let blankFrame;
+  if (action === "insert-blank") {
+    const afterIndex = Math.round(Number(payload.frameIndex));
+    const size = neighborFrameSize(frames, Number.isInteger(afterIndex) ? afterIndex : -1);
+    const workspaceDir = projectStore.projectWorkspaceDir(project);
+    const firstPath = frames.find((frame) => frame?.path)?.path;
+    const directory = firstPath ? path.dirname(safeResolve(ROOT, firstPath) || "") : path.join(workspaceDir, "assets", profileId, animationId);
+    if (!directory || !isInside(directory, workspaceDir)) throw new Error("空白帧必须写在当前项目工作区内。");
+    const written = writeBlankFrameFile(directory, size.width, size.height, ROOT);
+    blankFrame = {
+      id: written.id,
+      name: written.name,
+      path: reslash(written.path),
+      duration: size.duration,
+      width: size.width,
+      height: size.height,
+      assetVersion: written.assetVersion,
+    };
+  }
+
+  const edited = editFrameSequence({
+    frames,
+    tuning: readTuningFile(project),
+    audio: readFrameAudioBindings(project),
+    attachments: readFrameImageAttachments(project),
+    trails: readAttackTrails(project),
+    profileId,
+    animationId,
+    action,
+    frameIndex: payload.frameIndex,
+    toIndex: payload.toIndex,
+    blankFrame,
+  });
+  animation.frames = edited.frames;
+  projectStore.writeJson(paths.manifest, manifest);
+  projectStore.writeJson(paths.tuning, edited.tuning);
+  projectStore.writeJson(paths.frameAudio, edited.audio);
+  projectStore.writeJson(paths.frameImageAttachments, edited.attachments);
+  projectStore.writeJson(paths.attackTrails, edited.trails);
+
+  const engine = projectEngine(project);
+  const syncOptions = { frameAudioBindings: edited.audio, frameImageAttachments: edited.attachments, attackTrails: edited.trails };
+  const godotSync = engine === "godot" ? syncGodotProject(ROOT, projectStore, project, syncOptions) : null;
+  const unitySync = engine === "unity" ? syncUnityProject(ROOT, projectStore, project, syncOptions) : null;
+  const runtimeProjectIdFiles = engine === "godot" ? syncGodotRuntimeProjectId(project) : [];
+  return {
+    action,
+    frameIndex: edited.selectedIndex,
+    frameCount: edited.frameCount,
+    engine,
+    godotSync,
+    unitySync,
+    runtimeProjectIdFiles,
+    warnings: validateProject(project, normalizeManifest(manifest)),
+  };
+}
+
 function saveFrameAttachmentImage(payload, project) {
   const decoded = decodeDataUrl(payload.data);
   if (!decoded?.buffer?.length || !decoded.mime.startsWith("image/")) {
@@ -1467,6 +1538,25 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, {
         ok: true,
         ...duplicated,
+        configRevision: projectConfigRevision(project),
+      });
+    }
+    if (req.method === "POST" && parsed.pathname === "/api/edit-frames") {
+      const payload = JSON.parse(await readBody(req));
+      const { project } = projectFromRequest(payload.projectId || parsed.searchParams.get("project"));
+      const currentRevision = projectConfigRevision(project);
+      const suppliedRevision = String(payload.configRevision || "");
+      if (payload.force !== true && suppliedRevision !== currentRevision) {
+        return send(res, 409, {
+          error: "服务器数据已被其他页面或工具更新，本次旧页面编辑已阻止。请刷新页面后再操作。",
+          code: "stale_config",
+          configRevision: currentRevision,
+        });
+      }
+      const edited = editProjectFrames(project, payload);
+      return send(res, 200, {
+        ok: true,
+        ...edited,
         configRevision: projectConfigRevision(project),
       });
     }

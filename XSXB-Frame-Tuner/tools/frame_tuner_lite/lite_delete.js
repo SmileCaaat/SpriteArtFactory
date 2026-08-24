@@ -210,4 +210,6 @@ function deleteLiteProfile(project, payload, options = {}) {
 module.exports = {
   deleteLiteAnimation,
   deleteLiteProfile,
+  purgeTuningForAnimation,
+  purgeTuningForProfile,
 };

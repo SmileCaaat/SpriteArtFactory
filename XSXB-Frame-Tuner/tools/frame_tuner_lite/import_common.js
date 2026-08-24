@@ -54,7 +54,7 @@ function loadManifest(project) {
   return store.readJson(store.paths(project).manifest, { schemaVersion: 1, profiles: [] });
 }
 
-function saveAnimation({ project, profileId, profileLabel, animation }) {
+function saveAnimation({ project, profileId, profileLabel, animation, resetCanvas = true }) {
   const target = store.paths(project);
   const manifest = loadManifest(project);
   manifest.schemaVersion = 1;
@@ -84,16 +84,41 @@ function saveAnimation({ project, profileId, profileLabel, animation }) {
   }
   store.writeJson(target.manifest, manifest);
   const settings = store.readJson(target.settings, { schemaVersion: 1, canvas: {}, export: {} });
+  if (resetCanvas !== false) {
+    settings.schemaVersion = 1;
+    settings.canvas = {
+      padding: Number(settings.canvas?.padding ?? 24),
+      autoMeasured: false,
+    };
+    settings.export = {
+      sheetColumns: Number(settings.export?.sheetColumns || 8),
+    };
+    store.writeJson(target.settings, settings);
+  }
+  return { manifest, settings };
+}
+
+function applyLiteCanvas(project, canvas) {
+  if (!canvas || typeof canvas !== "object") return null;
+  const target = store.paths(project);
+  const settings = store.readJson(target.settings, { schemaVersion: 1, canvas: {}, export: {} });
+  const width = Math.min(8192, Math.max(1, Math.round(Number(canvas.width || 0))));
+  const height = Math.min(8192, Math.max(1, Math.round(Number(canvas.height || 0))));
+  if (!width || !height) return null;
   settings.schemaVersion = 1;
   settings.canvas = {
-    padding: Number(settings.canvas?.padding ?? 24),
-    autoMeasured: false,
+    width,
+    height,
+    originPixelX: Number(canvas.originPixelX ?? width * 0.5),
+    originPixelY: Number(canvas.originPixelY ?? height),
+    padding: Math.min(1024, Math.max(0, Math.round(Number(canvas.padding ?? settings.canvas?.padding ?? 24)))),
+    autoMeasured: canvas.autoMeasured !== false,
   };
   settings.export = {
-    sheetColumns: Number(settings.export?.sheetColumns || 8),
+    sheetColumns: Math.min(64, Math.max(1, Math.round(Number(canvas.sheetColumns || settings.export?.sheetColumns || 8)))),
   };
   store.writeJson(target.settings, settings);
-  return { manifest, settings };
+  return settings;
 }
 
 module.exports = {
@@ -101,6 +126,7 @@ module.exports = {
   TOOL_ROOT,
   LITE_ROOT,
   animationDestination,
+  applyLiteCanvas,
   assetVersion,
   copyStable,
   loadManifest,

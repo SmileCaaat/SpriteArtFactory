@@ -21,6 +21,7 @@ const { withUtf8Charset } = require("../http_content_type");
 const { TOOL_ROOT, LITE_ROOT } = require("./lite_paths");
 const { importPngFrames, importPngSheet } = require("./import_payload");
 const { deleteLiteAnimation, deleteLiteProfile } = require("./lite_delete");
+const { editFrameSequence, neighborFrameSize, writeBlankFrameFile } = require("../frame_sequence_edit");
 const ROOT = LITE_ROOT;
 const FULL_PUBLIC = path.join(TOOL_ROOT, "tools", "animation_tuner", "public");
 const LITE_PUBLIC = path.join(__dirname, "public");
@@ -403,6 +404,63 @@ function duplicateProjectFrame(project, payload) {
   return { frameIndex: frameIndex + 1, frameCount: frames.length, warnings: validateLiteProject(project) };
 }
 
+function editLiteFrames(project, payload) {
+  const profileId = String(payload.profileId || "");
+  const animationId = String(payload.animationId || "");
+  const action = String(payload.action || "");
+  const target = store.paths(project);
+  const manifest = store.readJson(target.manifest, EMPTY_MANIFEST);
+  const profile = (Array.isArray(manifest.profiles) ? manifest.profiles : []).find((entry) => String(entry.id) === profileId);
+  const animation = profile?.animations?.find((entry) => String(entry.id || entry.name) === animationId);
+  const frames = Array.isArray(animation?.frames) ? animation.frames : null;
+  if (!profile || !animation || !frames) throw new Error(`Animation not found: ${profileId}/${animationId}`);
+
+  let blankFrame;
+  if (action === "insert-blank") {
+    const afterIndex = Math.round(Number(payload.frameIndex));
+    const size = neighborFrameSize(frames, Number.isInteger(afterIndex) ? afterIndex : -1);
+    const firstPath = frames.find((frame) => frame?.path)?.path;
+    const directory = firstPath ? path.dirname(safeResolve(ROOT, firstPath) || "") : path.join(target.workspaceDir, "assets", profileId, animationId);
+    if (!directory || !isInside(directory, target.workspaceDir)) throw new Error("空白帧必须写在当前 Lite 项目内。");
+    const written = writeBlankFrameFile(directory, size.width, size.height, ROOT);
+    blankFrame = {
+      id: written.id,
+      name: written.name,
+      path: reslash(written.path),
+      duration: size.duration,
+      width: size.width,
+      height: size.height,
+      assetVersion: written.assetVersion,
+    };
+  }
+
+  const edited = editFrameSequence({
+    frames,
+    tuning: store.readJson(target.tuning, EMPTY_TUNING),
+    audio: audioBindingsArray(store.readJson(target.frameAudio, [])),
+    attachments: store.readJson(target.frameImageAttachments, []),
+    trails: normalizeAttackTrails(store.readJson(target.attackTrails, EMPTY_ATTACK_TRAILS)),
+    profileId,
+    animationId,
+    action,
+    frameIndex: payload.frameIndex,
+    toIndex: payload.toIndex,
+    blankFrame,
+  });
+  animation.frames = edited.frames;
+  store.writeJson(target.manifest, manifest);
+  store.writeJson(target.tuning, edited.tuning);
+  store.writeJson(target.frameAudio, edited.audio);
+  store.writeJson(target.frameImageAttachments, edited.attachments);
+  store.writeJson(target.attackTrails, edited.trails);
+  return {
+    action,
+    frameIndex: edited.selectedIndex,
+    frameCount: edited.frameCount,
+    warnings: validateLiteProject(project),
+  };
+}
+
 function validateLiteProject(project, data = projectData(project)) {
   const warnings = [];
   const ids = new Set();
@@ -497,11 +555,22 @@ function importLiteAnimation(project, payload) {
       ...common,
       sheetData: payload.sheetData,
       json: payload.json,
+      audioFiles: payload.audioFiles,
+      canvas: payload.canvas,
+      resetCanvas: payload.resetCanvas,
     });
   }
   const frames = Array.isArray(payload.frames) ? payload.frames : [];
   if (!frames.length) throw new Error("没有 PNG 帧可导入。");
-  return importPngFrames(project, { ...common, files: frames });
+  return importPngFrames(project, {
+    ...common,
+    files: frames,
+    json: payload.json,
+    durationMsByName: payload.durationMsByName,
+    audioFiles: payload.audioFiles,
+    canvas: payload.canvas,
+    resetCanvas: payload.resetCanvas,
+  });
 }
 
 function savePayload(project, payload) {
@@ -544,12 +613,16 @@ function serveIndex(res) {
   html = html.replace("<title>XSXB Frame Tuner</title>", "<title>XSXB Frame Tuner Lite</title>")
     .replace("<h1>XSXB Frame Tuner</h1>", "<h1>XSXB Frame Tuner Lite</h1>")
     .replace("</head>", "  <link rel=\"stylesheet\" href=\"/lite.css\" />\n  </head>")
-    .replace("</body>", "    <script src=\"/lite.js\"></script>\n  </body>");
+    .replace("</body>", "    <script src=\"/export_package.js\"></script>\n    <script src=\"/lite.js\"></script>\n  </body>");
   return send(res, 200, html, "text/html; charset=utf-8");
 }
 
 function serveStatic(res, pathname) {
   if (pathname === "/") return serveIndex(res);
+  if (pathname === "/export_package.js") {
+    const full = path.join(__dirname, "export_package.js");
+    return send(res, 200, fs.readFileSync(full), "application/javascript; charset=utf-8");
+  }
   const lite = pathname === "/lite.js" || pathname === "/lite.css";
   const base = lite ? LITE_PUBLIC : FULL_PUBLIC;
   const full = safeResolve(base, pathname.slice(1));
@@ -589,6 +662,25 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, {
         ok: true,
         ...duplicated,
+        configRevision: projectConfigRevision(project),
+      });
+    }
+    if (req.method === "POST" && url.pathname === "/api/edit-frames") {
+      const payload = JSON.parse(await readBody(req));
+      const project = store.resolveProject(payload.projectId);
+      if (!project) return send(res, 404, { error: "Lite project not found." });
+      const currentRevision = projectConfigRevision(project);
+      if (payload.force !== true && String(payload.configRevision || "") !== currentRevision) {
+        return send(res, 409, {
+          error: "服务器数据已被其他页面或工具更新，本次旧页面编辑已阻止。请刷新页面后再操作。",
+          code: "stale_config",
+          configRevision: currentRevision,
+        });
+      }
+      const edited = editLiteFrames(project, payload);
+      return send(res, 200, {
+        ok: true,
+        ...edited,
         configRevision: projectConfigRevision(project),
       });
     }
@@ -753,6 +845,7 @@ module.exports = {
   deleteLiteProfile,
   duplicateFrameBindings,
   duplicateTrailFrameSlices,
+  editLiteFrames,
   importLiteAnimation,
   remapFrameOverrideDictionary,
   saveFrameAudioBindings,

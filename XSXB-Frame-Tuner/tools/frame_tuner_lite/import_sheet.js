@@ -15,6 +15,7 @@ const {
   slug,
   store,
 } = require("./import_common");
+const { audioLookupKeys } = require("./export_package");
 
 function frameEntries(raw) {
   if (Array.isArray(raw?.frames)) return raw.frames.map((value, index) => [String(value.filename || value.name || index), value]);
@@ -37,7 +38,34 @@ const AUDIO_TYPE_BY_EXTENSION = Object.freeze({
   ".m4a": "audio/mp4", ".aac": "audio/aac", ".flac": "audio/flac", ".webm": "audio/webm",
 });
 
-function importSheetAudio({ project, profileId, animationId, animationType, outputPath, jsonPath, source, liteStore = store, root = ROOT }) {
+function uploadedAudioBuffers(audioFiles = []) {
+  const uploaded = new Map();
+  for (const entry of Array.isArray(audioFiles) ? audioFiles : []) {
+    const relative = String(entry?.file || entry?.name || "").trim();
+    const buffer = entry?.buffer instanceof Buffer
+      ? entry.buffer
+      : (typeof entry?.data === "string" && entry.data ? Buffer.from(String(entry.data).replace(/^data:[^;]+;base64,/i, ""), "base64") : null);
+    if (!relative || !buffer?.length) continue;
+    for (const key of audioLookupKeys(relative)) uploaded.set(key, buffer);
+  }
+  return uploaded;
+}
+
+function resolveSheetAudioBuffer(relative, jsonPath, uploaded) {
+  const keys = audioLookupKeys(relative);
+  for (const key of keys) {
+    if (uploaded.has(key)) return uploaded.get(key);
+  }
+  if (jsonPath) {
+    const sourcePath = path.resolve(path.dirname(jsonPath), relative);
+    if (relative && fs.existsSync(sourcePath)) return fs.readFileSync(sourcePath);
+    const fallback = path.resolve(path.dirname(jsonPath), "..", "audio", path.basename(relative));
+    if (relative && fs.existsSync(fallback)) return fs.readFileSync(fallback);
+  }
+  return null;
+}
+
+function importSheetAudio({ project, profileId, animationId, animationType, outputPath, jsonPath, source, audioFiles = [], liteStore = store, root = ROOT }) {
   if (!source?.audio || typeof source.audio !== "object") return 0;
   const target = liteStore.paths(project);
   const animationName = `${profileId}/${animationId}`;
@@ -48,15 +76,15 @@ function importSheetAudio({ project, profileId, animationId, animationType, outp
       && String(metadata.profileId || "") === profileId
       && String(metadata.animation || "") === animationName);
   });
+  const uploaded = uploadedAudioBuffers(audioFiles);
   const files = new Map();
   for (const descriptor of Array.isArray(source.audio.files) ? source.audio.files : []) {
     const relative = String(descriptor?.file || "");
-    const sourcePath = path.resolve(path.dirname(jsonPath), relative);
-    const extension = path.extname(sourcePath).toLowerCase();
-    if (!relative || !AUDIO_TYPE_BY_EXTENSION[extension] || !fs.existsSync(sourcePath)) {
+    const buffer = resolveSheetAudioBuffer(relative, jsonPath, uploaded);
+    const extension = path.extname(String(relative || "")).toLowerCase() || path.extname(String(descriptor?.name || "")).toLowerCase();
+    if (!relative || !AUDIO_TYPE_BY_EXTENSION[extension] || !buffer) {
       throw new Error(`Sheet audio file not found or unsupported: ${relative || "(empty)"}`);
     }
-    const buffer = fs.readFileSync(sourcePath);
     const hash = crypto.createHash("sha256").update(buffer).digest("hex");
     const stablePath = path.join(target.workspaceDir, "audio", `${hash}${extension}`);
     fs.mkdirSync(path.dirname(stablePath), { recursive: true });
@@ -102,13 +130,15 @@ function importSheetAudio({ project, profileId, animationId, animationType, outp
 function run(argv = process.argv.slice(2)) {
   const args = parseArgs(argv);
   const projectId = slug(required(args, "project"), "lite_project");
-  const profileId = slug(required(args, "profile"), "sequence");
-  const animationId = slug(required(args, "animation"), "animation");
   const sheet = path.resolve(required(args, "sheet"));
   const jsonPath = path.resolve(required(args, "json"));
   if (!fs.existsSync(sheet)) throw new Error(`Sheet PNG not found: ${sheet}`);
   if (!fs.existsSync(jsonPath)) throw new Error(`Sheet JSON not found: ${jsonPath}`);
   const source = JSON.parse(fs.readFileSync(jsonPath, "utf8").replace(/^\uFEFF/, ""));
+  if (!args.profile && !source.meta?.profileId) throw new Error("Missing --profile");
+  if (!args.animation && !source.meta?.animationId) throw new Error("Missing --animation");
+  const profileId = slug(args.profile || source.meta?.profileId, "sequence");
+  const animationId = slug(args.animation || source.meta?.animationId, "animation");
   const entries = frameEntries(source);
   const project = store.ensureProject(projectId, String(args.label || projectId));
   const destination = animationDestination(project, profileId, animationId);
@@ -146,7 +176,7 @@ function run(argv = process.argv.slice(2)) {
     independentPlayback: args.independent === true,
     frames,
   };
-  saveAnimation({ project, profileId, profileLabel: String(args["profile-label"] || profileId), animation });
+  saveAnimation({ project, profileId, profileLabel: String(args["profile-label"] || source.meta?.profileLabel || profileId), animation });
   const audio = importSheetAudio({
     project,
     profileId,
