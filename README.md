@@ -116,7 +116,7 @@ start_sprite_art_factory.bat
 
 | 工具 | 依赖 |
 |------|------|
-| Sprite Video Lab | Python 3.10+、Pillow、ffmpeg；AI 抠图见 `sprite-video-lab/requirements-ai.txt` |
+| Sprite Video Lab | Python 3.10+、Pillow；**ffmpeg 已内置在** `tools/ffmpeg/bin/`（相对仓库，启动脚本自动指向；克隆后若缺文件会尝试 `scripts/setup_ffmpeg.bat`） |
 | XSXB Frame Tuner | Node.js 18+；完整版 Godot / Unity 接线需对应游戏项目 |
 | XSXB Lite | Node.js 18+；浏览器建议 Chrome / Edge（文件夹选择与导出依赖 File System Access API） |
 

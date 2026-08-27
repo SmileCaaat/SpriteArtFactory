@@ -72,7 +72,7 @@ _RUNTIME_CONSOLE: dict = {
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8894
-DEFAULT_FFMPEG_FALLBACK_ROOT = Path(r"I:\FF\Flowframes\FlowframesData\pkgs\av")
+DEFAULT_FFMPEG_FALLBACK_ROOT = Path(__file__).resolve().parent.parent / "tools" / "ffmpeg" / "bin"
 HOST_ENV = "SPRITE_VIDEO_LAB_HOST"
 PORT_ENV = "SPRITE_VIDEO_LAB_PORT"
 FFMPEG_DIR_ENV = "SPRITE_VIDEO_LAB_FFMPEG_DIR"

@@ -17,5 +17,6 @@ sprite-video-lab-models/EZ-CorridorKey/
 **/Thumbs.db
 sprite-video-lab/work/
 sprite-video-lab/**/exports/
+tools/ffmpeg/bin/*.exe
 XSXB-Frame-Tuner/**/node_modules/
 XSXB-Frame-Tuner/**/.cache/

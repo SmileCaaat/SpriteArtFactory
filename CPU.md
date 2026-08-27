@@ -32,7 +32,7 @@ Do **not** maintain parallel `D:\Tools\sprite-video-lab` or `D:\Tools\XSXB-Frame
 - Menu: `start_sprite_art_factory.bat`
 - SVL CPU wiring: `sprite-video-lab\start_sprite_video_lab_a1.bat`
 
-`ffmpeg` / `ffprobe` should be on `PATH`, or set `SPRITE_VIDEO_LAB_FFMPEG_DIR`.
+Sprite Video Lab 使用仓库内固定路径 `tools/ffmpeg/bin/`（启动时自动设置 `SPRITE_VIDEO_LAB_FFMPEG_DIR`）。首次缺失时 `scripts/setup_ffmpeg.bat` 会从同级 `Open-LLM-VTuber` 复制，无需每台机器改 PATH。
 
 ## Git workflow (this machine)
 
