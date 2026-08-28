@@ -89,7 +89,7 @@
 
   function importMarkup() {
     return `
-      <details id="liteImportPanel" class="panel liteImportPanel" open>
+      <details id="liteImportPanel" class="panel liteImportPanel">
         <summary><h2>导入素材</h2></summary>
         <div class="liteImportBody">
           <label class="field">
@@ -99,6 +99,7 @@
               <option value="new_character">新建角色素材集</option>
               <option value="sequence">向当前素材集追加序列</option>
               <option value="vfx_layer">向当前素材集追加附着特效</option>
+              <option value="composite">新建组合序列（空时间线）</option>
             </select>
           </label>
           <div id="liteImportProfileFields" class="liteImportProfileFields">
@@ -163,9 +164,17 @@
       </details>`;
   }
 
+  function chromeExportMarkup() {
+    return `
+      <div class="liteChromeExport" role="group" aria-label="Lite export">
+        <button id="liteExportSequence" type="button" class="liteChromeButton">导出 PNG 序列</button>
+        <button id="liteExportSheet" type="button" class="liteChromeButton">导出 Sheet + JSON</button>
+      </div>`;
+  }
+
   function markup() {
     return `
-      <details id="liteExportPanel" class="panel liteExportPanel" open>
+      <details id="liteExportPanel" class="panel liteExportPanel">
         <summary><h2>透明序列导出</h2></summary>
         <div class="liteExportBody">
           <div class="liteCanvasGrid">
@@ -175,10 +184,6 @@
           <div class="liteCanvasResult"><span>全角色统一画布</span><strong id="liteCanvasResult">等待计算</strong></div>
           <p class="liteExportHelp">棍子只负责绘制拖尾轨迹；拖尾必须在“拖尾插入”中逐帧加入。导出时每张可播放源帧只生成一张透明烘焙帧，主帧、附加帧和该帧拖尾会合成到同一张 PNG，并保持全角色统一画布和稳定角色原点。附属图层不会重复导出。</p>
           <button id="liteMeasureCanvas" type="button" class="secondary liteMeasureButton">重新计算全角色画布</button>
-          <div class="liteExportActions">
-            <button id="liteExportSequence" type="button" class="liteExportButton">导出 PNG 序列</button>
-            <button id="liteExportSheet" type="button" class="liteExportButton">导出 Sheet + JSON</button>
-          </div>
           <div id="liteExportStatus" class="liteExportStatus" aria-live="polite">等待导出</div>
         </div>
       </details>`;
@@ -556,8 +561,9 @@
     const sourceHint = input("liteImportSourceHint");
     const submit = input("liteImportSubmit");
     const needsNewProfile = kind === "new_character" || kind === "new_skill";
-    const needsCurrentProfile = kind === "sequence" || kind === "vfx_layer";
+    const needsCurrentProfile = kind === "sequence" || kind === "vfx_layer" || kind === "composite";
     const packageMode = source === "export_package";
+    const compositeMode = kind === "composite";
     if (profileFields) profileFields.hidden = !needsNewProfile;
     if (currentProfile) {
       currentProfile.hidden = !needsCurrentProfile;
@@ -566,23 +572,28 @@
         : "请先在上方选择一个素材集，或改为新建素材集。";
     }
     if (attachFields) attachFields.hidden = kind !== "vfx_layer";
-    if (sequenceField) sequenceField.hidden = packageMode;
-    if (fpsField) fpsField.hidden = packageMode;
+    if (sequenceField) sequenceField.hidden = packageMode || compositeMode;
+    if (fpsField) fpsField.hidden = packageMode || compositeMode;
+    const sourceField = input("liteImportSource")?.closest?.("label");
+    if (sourceField) sourceField.hidden = compositeMode;
     if (sourceHint) {
-      sourceHint.textContent = packageMode
+      sourceHint.textContent = compositeMode
+        ? "创建一条空的多轨时间线。之后可把 PNG 文件夹或其它序列拖进画布/时间线，做成可错开同播的 clip。"
+        : packageMode
         ? "选择一次导出生成的批次文件夹（里面有各动作子目录，以及可选的 audio/）。不要只选某一个动作子目录，否则音效可能导不回来。"
         : source === "sheet"
           ? "分别选择 spritesheet.png 和 spritesheet.json。若有音效，请改用「Lite 导出包」选择整个批次文件夹。"
           : "PNG 文件夹用于原始序列。导出包用于把已导出的 Sheet + JSON 或 PNG 序列整包导回来继续改。";
     }
-    if (pickFrames) pickFrames.hidden = source !== "frames";
-    if (pickPackage) pickPackage.hidden = source !== "export_package";
-    if (pickSheetPng) pickSheetPng.hidden = source !== "sheet";
-    if (pickSheetJson) pickSheetJson.hidden = source !== "sheet";
+    if (pickFrames) pickFrames.hidden = compositeMode || source !== "frames";
+    if (pickPackage) pickPackage.hidden = compositeMode || source !== "export_package";
+    if (pickSheetPng) pickSheetPng.hidden = compositeMode || source !== "sheet";
+    if (pickSheetJson) pickSheetJson.hidden = compositeMode || source !== "sheet";
     if (kind === "vfx_layer") populateAttachToSelect(profileId);
     const blocked = needsCurrentProfile && !profileId;
     if (submit) submit.disabled = blocked || state.importing;
     if (blocked) setImportStatus("请先选择素材集，或改为新建角色/技能素材集。");
+    else if (compositeMode) setImportStatus("将在当前素材集下新建空组合序列。");
     else if (!state.importing) setImportStatus("选择素材后点击导入");
   }
 
@@ -617,7 +628,7 @@
     const kind = input("liteImportKind")?.value || "new_skill";
     const packageMode = (input("liteImportSource")?.value || "frames") === "export_package";
     const animationId = slugId(input("liteImportAnimationId")?.value, "");
-    if (!packageMode && !animationId) throw new Error("请填写序列 ID。");
+    if (!packageMode && kind !== "composite" && !animationId) throw new Error("请填写序列 ID。");
     const fps = number(input("liteImportFps")?.value, 0.1, 240, 12);
     if (kind === "new_character" || kind === "new_skill") {
       const packageProfileLabel = state.pendingPackage?.profileLabel || "";
@@ -665,8 +676,43 @@
     const api = window.XsxbFrameTunerLite;
     const current = api?.current();
     if (!current?.projectId) throw new Error("未选择 Lite 项目。");
+    const kind = input("liteImportKind")?.value || "new_skill";
     const source = input("liteImportSource")?.value || "frames";
     const target = resolveImportTarget();
+    if (kind === "composite") {
+      state.importing = true;
+      input("liteImportSubmit").disabled = true;
+      setImportStatus("正在新建组合序列…");
+      try {
+        const response = await fetch("/api/composite-sequence", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            projectId: current.projectId,
+            action: "create",
+            profileId: target.profileId,
+            profileLabel: target.profileLabel,
+            animationId: target.animationId || "composite",
+            name: target.animationId || "composite",
+            configRevision: window.XsxbFrameTunerLite?.configRevision?.() || "",
+          }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || "新建组合序列失败。");
+        setImportStatus(`已新建组合序列：${payload.profileId}/${payload.animationId}`);
+        window.dispatchEvent(new CustomEvent("xsxb-lite-imported", {
+          detail: {
+            profileId: payload.profileId,
+            animationId: payload.animationId,
+            message: `已新建组合序列 ${payload.profileId} / ${payload.animationId}`,
+          },
+        }));
+      } finally {
+        state.importing = false;
+        syncImportForm();
+      }
+      return;
+    }
     if (source === "frames" && !state.pendingFrames.length) throw new Error("请先选择 PNG 文件夹。");
     if (source === "sheet" && (!state.pendingSheetPng || !state.pendingSheetJson)) throw new Error("请先分别选择 Sheet PNG 和 JSON。");
     if (source === "export_package" && !state.pendingPackage?.animations?.length) throw new Error("请先选择 Lite 导出文件夹。");
@@ -778,7 +824,9 @@
     const save = document.querySelector("#save");
     if (!save) return;
     initializeImport();
-    save.insertAdjacentHTML("beforebegin", markup());
+    const outliner = document.querySelector(".outliner");
+    if (outliner) outliner.insertAdjacentHTML("beforeend", markup());
+    save.insertAdjacentHTML("beforebegin", chromeExportMarkup());
     document.querySelector("#liteExportSequence").addEventListener("click", () => exportOutput("sequence"));
     document.querySelector("#liteExportSheet").addEventListener("click", () => exportOutput("sheet"));
     document.querySelector("#liteMeasureCanvas").addEventListener("click", measureCanvas);
@@ -790,8 +838,10 @@
 
   function applyLiteLabels() {
     document.body.classList.add("frameTunerLite");
-    const subtitle = document.querySelector(".brand p");
+    const subtitle = document.querySelector(".chromeTitle span") || document.querySelector(".brand p");
     if (subtitle) subtitle.textContent = "透明序列帧后期与打包";
+    const title = document.querySelector(".chromeTitle strong");
+    if (title) title.textContent = "FrameDock Lite";
     const profileLabel = document.querySelector("#profileFieldLabel");
     const groupLabel = document.querySelector("#groupFieldLabel");
     if (profileLabel) profileLabel.textContent = "素材集";
@@ -1010,7 +1060,7 @@
         trimmed: false,
       }])),
       meta: {
-        app: "XSXB Frame Tuner Lite",
+        app: "FrameDock Lite",
         version: 1,
         image: "spritesheet.png",
         format: "RGBA8888",
@@ -1196,7 +1246,7 @@
         if (kind === "sequence") {
           await writeJson(targetDirectory, "export.json", {
             schemaVersion: 1,
-            app: "XSXB Frame Tuner Lite",
+            app: "FrameDock Lite",
             profileId: selected.profileId,
             profileLabel: selected.profileLabel,
             animationId: selected.animationId,
@@ -1213,7 +1263,7 @@
       }
       await writeJson(batchDirectory, "lite-export.json", {
         schemaVersion: 1,
-        app: "XSXB Frame Tuner Lite",
+        app: "FrameDock Lite",
         kind,
         profileId: current.profileId,
         profileLabel: current.profileLabel,

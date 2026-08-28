@@ -1023,6 +1023,7 @@
 
     pointerDown(event) {
       if (!this.enabled || !this.workspaceMode) return false;
+      if (event.button !== 0) return false;
       this.staticEditPreview = false;
       if (this.picking) {
         if (this.workspaceMode !== "draw") return false;
@@ -1096,6 +1097,19 @@
           this.render(); this.hooks.draw();
           return true;
         }
+      }
+      return false;
+    }
+
+    deleteActive() {
+      if (!this.enabled) return false;
+      if (this._segment()?.colorMode === "gradient" && this.gradientStopId) {
+        this._deleteGradientStop();
+        return true;
+      }
+      if (this.workspaceMode === "draw" && this._stick()) {
+        this._deleteStick();
+        return true;
       }
       return false;
     }
@@ -1278,13 +1292,6 @@
       e.attackTrailGradientBar.addEventListener("pointercancel", (event) => this._gradientPointerUp(event));
       e.attackTrailGradientBar.addEventListener("dblclick", (event) => {
         if (event.target.closest?.(".trailGradientStop")) e.attackTrailGradientColor.click();
-      });
-      window.addEventListener("keydown", (event) => {
-        if (event.key !== "Delete" || event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
-        if (this.enabled && this._segment()?.colorMode === "gradient" && this.gradientStopId) {
-          event.preventDefault();
-          this._deleteGradientStop();
-        }
       });
       e.attackTrailPickColor.addEventListener("click", () => { this.picking = !this.picking; this.render(); this.hooks.draw(); });
       e.attackTrailGuideToggle.addEventListener("click", () => {

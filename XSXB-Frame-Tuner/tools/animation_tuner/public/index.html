@@ -3,26 +3,41 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>XSXB Frame Tuner</title>
+    <title>FrameDock</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/style.css?v=20260824-frame-edit" />
+    <link rel="stylesheet" href="/style.css?v=20260829-oc4" />
   </head>
   <body>
     <main class="app">
-      <aside class="sidebar">
-        <div class="brand">
+      <header class="chrome">
+        <div class="chromeBrand">
           <div class="mark"></div>
-          <div class="brandMain">
-            <div class="brandTop">
-              <h1>XSXB Frame Tuner</h1>
-              <div class="languageButtons" aria-label="Language">
-                <button type="button" class="languageButton" data-language="zh" title="中文">中</button>
-                <button type="button" class="languageButton" data-language="en" title="English">EN</button>
-              </div>
-            </div>
-            <p data-i18n="brandSubtitle">帧动画调参工作台</p>
+          <div class="chromeTitle">
+            <strong>FrameDock</strong>
+            <span data-i18n="brandSubtitle">帧动画调参工作台</span>
           </div>
         </div>
+        <div class="chromeActions">
+          <button id="save" class="save" data-i18n="saveTuning">保存调参</button>
+          <div id="saveState" class="saveState" data-i18n="noChanges">没有改动</div>
+          <div class="languageButtons" aria-label="Language">
+            <button type="button" class="languageButton" data-language="zh" title="中文">中</button>
+            <button type="button" class="languageButton" data-language="en" title="English">EN</button>
+          </div>
+          <div class="appearanceControls" aria-label="UI appearance">
+            <div class="themeSwitch" aria-label="Theme">
+              <button type="button" class="themeButton" data-theme="dark" title="黑色 UI">黑</button>
+              <button type="button" class="themeButton" data-theme="light" title="白色 UI">白</button>
+            </div>
+            <label class="canvasColorControl" title="画布颜色">
+              <input id="canvasColor" type="color" value="#000000" />
+            </label>
+          </div>
+        </div>
+      </header>
+      <aside class="sidebar">
+        <section class="outliner">
+        <header class="paneLabel" data-i18n="outlinerPane">大纲</header>
         <section id="updatePanel" class="updatePanel" aria-live="polite" hidden>
           <div class="updateHeading">
             <strong data-i18n="updateAvailable">发现新版本</strong>
@@ -37,6 +52,8 @@
         </label>
         <div id="projectBinding" class="projectBinding" aria-live="polite"></div>
         <div class="buttonRow projectActions">
+          <button id="openProject" class="secondary" type="button" data-i18n="openProject">打开项目</button>
+          <button id="newLiteProject" class="secondary" type="button" data-i18n="newLiteProject" hidden>新建项目</button>
           <button id="refreshProject" class="secondary" data-i18n="refreshAnimationList">刷新动画列表</button>
           <button id="addCodexPet" class="secondary" data-i18n="addCodexPet" hidden>＋ 导入新宠物</button>
         </div>
@@ -60,6 +77,15 @@
             <select id="groupSelect"></select>
           </label>
         </div>
+        <div id="compositeActions" class="compositeActions" hidden>
+          <button id="createCompositeFromCurrent" type="button" class="secondary" data-i18n="createCompositeFromCurrent">基于此素材新建组合序列</button>
+          <button id="createCompositeEmpty" type="button" class="secondary" data-i18n="createCompositeEmpty">新建组合序列</button>
+          <label id="compositeAddClipField" class="field" hidden>
+            <span data-i18n="addClipToTimeline">加入时间线</span>
+            <select id="compositeAddClipSelect"></select>
+          </label>
+          <input id="compositeImportInput" type="file" accept="image/png,.png" webkitdirectory multiple hidden>
+        </div>
         <label class="field">
           <span data-i18n="findGroup">查找组</span>
           <input id="groupSearch" type="search" placeholder="名称、类型、来源" data-i18n-placeholder="groupSearchPlaceholder" autocomplete="off" />
@@ -77,8 +103,11 @@
             </label>
           </div>
         </details>
+        </section>
+        <section class="details">
+        <header class="paneLabel" data-i18n="detailsPane">细节</header>
         <details class="panel" data-panel="adjustment-base" open>
-          <summary><h2 data-i18n="adjustmentBase">调整 Base</h2></summary>
+          <summary><h2 data-i18n="adjustmentBase">变换</h2></summary>
           <div class="adjustModeRow">
             <label class="toggle compact"><input id="adjustCharacter" type="checkbox" /><span data-i18n="character">角色</span></label>
             <label class="toggle compact"><input id="adjustGroup" type="checkbox" /><span data-i18n="group">组</span></label>
@@ -93,7 +122,10 @@
             <label class="number stepNumber"><span data-i18n="offsetY">偏移 Y</span><span class="numberStepper"><button type="button" class="numberStep" data-step-target="baseY" data-step-dir="-1">&lsaquo;</button><input id="baseY" type="number" step="1" /><button type="button" class="numberStep" data-step-target="baseY" data-step-dir="1">&rsaquo;</button></span></label>
           </div>
           <button id="applyBaseToFrame" class="secondary" data-i18n="copyBaseToSelected" hidden>复制 Base 到选中帧</button>
-          <button id="rebaseGroupOrigin" type="button" class="secondary groupOriginAction" data-i18n="rebaseGroupOrigin" hidden>组原点归 0（仅当前序列）</button>
+          <div class="groupOriginActions">
+            <button id="rebaseGroupOrigin" type="button" class="secondary groupOriginAction" data-i18n="rebaseGroupOrigin" hidden>原点归 0（保持画面）</button>
+            <button id="alignTransformPivot" type="button" class="secondary groupOriginAction" data-i18n="alignTransformPivot" hidden disabled>变换枢轴对齐</button>
+          </div>
           <input id="characterBaseScale" type="hidden" readonly />
           <input id="characterBaseSource" type="hidden" readonly />
           <input id="frameScale" type="hidden" />
@@ -277,30 +309,26 @@
           </div>
           <label class="toggle"><input id="boxEnabled" type="checkbox" /><span data-i18n="boxEnabled">这一帧启用碰撞框</span></label>
         </details>
-        <button id="save" class="save" data-i18n="saveTuning">保存调参</button>
-        <div id="saveState" class="saveState" data-i18n="noChanges">没有改动</div>
-        <div id="status" class="status" hidden></div>
+        </section>
       </aside>
 
       <section class="workspace">
-        <div class="toolbar">
-          <div class="toolbarMain">
-            <strong id="canvasTitle" data-i18n="canvas">画布</strong>
-            <span id="hint" data-i18n="hint">拖动画布可平移。选中附加帧：拖动移动，按住 R 滚轮旋转，按住 Z 滚轮缩放。</span>
-            <div id="selectionHud" class="selectionHud">帧 -</div>
-          </div>
-          <div class="toolbarActions">
-            <div class="appearanceControls" aria-label="UI appearance">
-              <div class="themeSwitch" aria-label="Theme">
-                <button type="button" class="themeButton" data-theme="dark" title="黑色 UI">黑</button>
-                <button type="button" class="themeButton" data-theme="light" title="白色 UI">白</button>
-              </div>
-              <label class="canvasColorControl" title="画布颜色">
-                <input id="canvasColor" type="color" value="#000000" />
-              </label>
+        <div class="canvasPane">
+          <div class="viewportToolbar">
+            <div class="editorModeSwitch" role="group" aria-label="Editor modes">
+              <button id="editorModeTransform" type="button" class="secondary editorModeButton active" data-editor-mode="transform" data-i18n="editorModeTransform">变换</button>
+              <button id="editorModeBoxes" type="button" class="secondary editorModeButton" data-editor-mode="boxes" data-i18n="editorModeBoxes">碰撞框</button>
+              <button id="editorModeTrails" type="button" class="secondary editorModeButton" data-editor-mode="trails" data-i18n="editorModeTrails">拖尾</button>
+            </div>
+            <div class="toolModeSwitch" role="group" aria-label="Transform tools">
+              <button id="toolSelect" type="button" class="secondary iconButton toolModeButton" data-tool-mode="select" data-i18n-title="toolSelect" title="选择 Q">Q</button>
+              <button id="toolMove" type="button" class="secondary iconButton toolModeButton" data-tool-mode="move" data-i18n-title="toolMove" title="移动 W">W</button>
+              <button id="toolRotate" type="button" class="secondary iconButton toolModeButton" data-tool-mode="rotate" data-i18n-title="toolRotate" title="旋转 E">E</button>
+              <button id="toolScale" type="button" class="secondary iconButton toolModeButton" data-tool-mode="scale" data-i18n-title="toolScale" title="缩放 R">R</button>
+              <button id="toolPivot" type="button" class="secondary iconButton toolModeButton" data-tool-mode="pivot" data-i18n-title="toolPivot" title="枢轴 O">O</button>
             </div>
             <div class="historyControls">
-              <button id="playPause" class="secondary iconButton playButton" data-i18n-title="play" title="播放">播放</button>
+              <button id="playPause" class="secondary iconButton playButton" data-i18n-title="play" title="播放" aria-label="播放">▶</button>
               <button id="attackTrailPreview" class="secondary iconButton trailPreviewButton" type="button" title="按固定 1000ms、尾/头速度比 0.5 预览拖尾" hidden>拖尾预览</button>
               <button id="ghostToggle" class="secondary iconButton active" data-i18n-title="ghost" title="残影">影</button>
               <button id="attackTrailGuideToggle" class="secondary iconButton" type="button" title="显示攻击拖尾棍子" aria-pressed="false">棍</button>
@@ -308,20 +336,62 @@
               <button id="undoTop" class="secondary iconButton" data-i18n-title="undo" title="撤销">&larr;</button>
               <button id="redoTop" class="secondary iconButton" data-i18n-title="redo" title="重做">&rarr;</button>
             </div>
-            <button id="importAttachmentsButton" class="secondary" type="button" data-i18n="importAttachments" data-i18n-title="importAttachmentsTitle" title="按 frame_001 文件名序号追加到对应帧（默认居中）">批量附加帧</button>
+            <button id="photopeaEdit" class="secondary" type="button" data-i18n="photopeaEdit">Photopea</button>
+            <button id="importAttachmentsButton" class="secondary" type="button" data-i18n="importAttachments" data-i18n-title="importAttachmentsTitle" title="按 frame_001 文件名序号追加到对应帧（默认居中）">批量附加</button>
             <input id="importAttachmentsInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif,.png,.jpg,.jpeg,.webp,.gif" multiple hidden>
             <button id="resetView" class="secondary" data-i18n="resetView">重置视图</button>
           </div>
+          <div id="selectionHud" class="selectionHud">帧 -</div>
+          <canvas id="stage" width="1280" height="760"></canvas>
         </div>
-        <canvas id="stage" width="1280" height="760"></canvas>
+        <div id="splitFilmstrip" class="splitGutter splitGutterY" role="separator" aria-orientation="horizontal" aria-label="调整帧序列栏高度"></div>
         <div id="filmstrip" class="filmstrip"></div>
       </section>
+      <footer class="statusBar">
+        <span id="hint" data-i18n="hint">中键平移画布。左键按 Q/W/E/R 操作。右键打开菜单。Ctrl+Z 撤销，Ctrl+C/V 复制粘贴，Delete 删除。</span>
+        <span id="status" class="status" hidden></span>
+        <span id="coordHud" class="coordHud"></span>
+      </footer>
     </main>
+    <dialog id="folderBrowserDialog" class="folderBrowserDialog" aria-labelledby="folderBrowserTitle">
+      <form id="folderBrowserForm" class="folderBrowserForm" method="dialog">
+        <h3 id="folderBrowserTitle" data-i18n="openProject">打开项目</h3>
+        <p id="folderBrowserHint" class="folderBrowserHint" data-i18n="openProjectHint">选择 Godot 或 Unity 工程根目录。</p>
+        <label class="field">
+          <span data-i18n="folderPath">路径</span>
+          <input id="folderBrowserPath" type="text" autocomplete="off" />
+        </label>
+        <div class="folderBrowserNav">
+          <button id="folderBrowserUp" type="button" class="secondary" data-i18n="folderUp">上级</button>
+          <span id="folderBrowserMeta" class="folderBrowserMeta"></span>
+        </div>
+        <div id="folderBrowserList" class="folderBrowserList" role="listbox"></div>
+        <div class="folderBrowserActions">
+          <button id="folderBrowserCancel" type="button" class="secondary" data-i18n="cancel">取消</button>
+          <button id="folderBrowserOpen" type="submit" class="accentButton" data-i18n="openSelectedFolder">打开此文件夹</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="photopeaDialog" class="photopeaDialog" aria-labelledby="photopeaDialogTitle">
+      <div class="photopeaChrome">
+        <h3 id="photopeaDialogTitle" data-i18n="photopeaEdit">Photopea 编辑本帧</h3>
+        <p class="photopeaHint" data-i18n="photopeaHint">主帧和附加层按当前编辑器构图对齐。写回只改源像素，Tuner 变换不会再叠一次。写回后可用 Ctrl+Z 撤回。</p>
+        <iframe id="photopeaFrame" class="photopeaFrame" title="Photopea"></iframe>
+        <div class="photopeaActions">
+          <button id="photopeaCancel" type="button" class="secondary" data-i18n="cancel">取消</button>
+          <button id="photopeaWriteBack" type="button" class="accentButton" data-i18n="photopeaWriteBack">写回 Tuner</button>
+        </div>
+      </div>
+    </dialog>
+    <nav id="contextMenu" class="contextMenu" hidden role="menu"></nav>
     <script src="/binding_scope.js?v=20260729-0217"></script>
     <script src="/transform_selection.js?v=20260729-0217"></script>
     <script src="/animation_families.js?v=20260731-1"></script>
     <script src="/timing_modes.js?v=20260729-0217"></script>
-    <script src="/attack_trails.js?v=20260823-rebase-origin-v2"></script>
-    <script src="/app.js?v=20260824-frame-edit"></script>
+    <script src="/composite_sequence.js?v=20260829-oc4"></script>
+    <script src="/composite_timeline.js?v=20260829-oc4"></script>
+    <script src="/attack_trails.js?v=20260828-ue5-ux"></script>
+    <script src="/photopea_bridge.js?v=20260828-marquee"></script>
+    <script src="/app.js?v=20260829-oc4"></script>
   </body>
 </html>

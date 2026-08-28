@@ -1,9 +1,9 @@
 ---
 name: xsxb-frame-tuner
-description: Batch-import PNG folders or Godot SpriteFrames into XSXB Frame Tuner, use the isolated Lite edition for non-game frame-sequence and sprite-sheet work, wire playable Godot or Unity runtimes, and manage Codex Pets. Use for character/animation import, layered sequence export, attack trails, transparent sprite sheets, gameplay wiring, boxes/SFX/attachments, Unity migration, Codex pet tuning, or requests mentioning 添加角色, 接入 tuner, lite版, 序列帧, 多图层, or 宠物图集.
+description: Batch-import PNG folders or Godot SpriteFrames into FrameDock, use the isolated Lite edition for non-game frame-sequence and sprite-sheet work, wire playable Godot or Unity runtimes, and manage Codex Pets. Use for character/animation import, layered sequence export, composite timelines, attack trails, transparent sprite sheets, gameplay wiring, boxes/SFX/attachments, Unity migration, Codex pet tuning, or requests mentioning 添加角色, 接入 tuner, lite版, 序列帧, 多图层, 组合序列, 时间线, or 宠物图集.
 ---
 
-# XSXB Frame Tuner
+# FrameDock
 
 Deliver the complete user-visible result from a natural-language request. Do not require the user to run importer commands or enumerate internal data files.
 
@@ -19,11 +19,11 @@ When modifying the tuner web UI or save payload, also read [references/ui-contra
 
 For Unity bindings, migration, runtime generation, or validation, also read [references/unity-contract.md](references/unity-contract.md). Its completion rules replace the Godot-only runtime and gameplay steps below while retaining the same authoritative data and UI contracts.
 
-For non-Godot sequence work or Frame Tuner Lite tasks, read [references/lite-contract.md](references/lite-contract.md). The Godot completion contract below does not apply to Lite; the isolation and validation rules in the Lite contract replace it.
+For non-Godot sequence work or FrameDock Lite tasks, read [references/lite-contract.md](references/lite-contract.md). The Godot completion contract below does not apply to Lite; the isolation and validation rules in the Lite contract replace it.
 
-## Frame Tuner Lite
+## FrameDock Lite
 
-Choose Lite when the requested deliverable is transparent PNG frames or a sprite sheet rather than a wired game runtime. It reuses the editor's timing, transforms, collision-box metadata, image layers, attack trails, and frame-bound SFX. Full and Lite filmstrips can reorder frames with the stack grab handle, delete a frame after confirmation (keep at least one), and insert a blank transparent PNG; hide these controls for Codex Pets. Lite SFX stays inside the isolated workspace and exports as portable audio assets plus JSON frame events; Lite deliberately excludes Godot sync and gameplay validation.
+Choose Lite when the requested deliverable is transparent PNG frames or a sprite sheet rather than a wired game runtime. It reuses the editor's timing, transforms, collision-box metadata, image layers, attack trails, frame-bound SFX, and the composite timeline (`composite_timeline.js`, sequence-frame clips rather than video). Full and Lite filmstrips can reorder frames with the stack grab handle, delete a frame after confirmation (keep at least one), and insert a blank transparent PNG; hide these controls for Codex Pets. Hide composite UI for Codex Pets. Lite SFX stays inside the isolated workspace and exports as portable audio assets plus JSON frame events; Lite deliberately excludes Godot sync and gameplay validation. Composite groups bake to ordinary PNG sequences on export.
 
 The Agent must import all source material without changing its source canvas, copy it into stable Lite paths, validate the isolated project, start the Lite service, and exercise a real browser export. Calculate one uniform canvas for the current character only when exporting, after all of that character's groups and visible layers have been measured. Do not ask the user to run the importer manually. Do not alter the Full Tuner project registry or active Godot project.
 
@@ -56,7 +56,7 @@ Do not silently downgrade to “frames copied” or “runtime generated.” Rep
 
 ## Locate the Tool
 
-Resolve the XSXB Frame Tuner root in this order:
+Resolve the FrameDock root in this order:
 
 1. Use the current workspace when it contains `tools/animation_tuner/server.js`.
 2. Use a tuner root explicitly supplied by the user.

@@ -33,6 +33,9 @@ const { checkForUpdates, performUpdate } = require("../updater");
 const { withUtf8Charset } = require("../http_content_type");
 const { frameBoxCoverageIssues } = require("../box_estimator");
 const { editFrameSequence, neighborFrameSize, writeBlankFrameFile } = require("../frame_sequence_edit");
+const { detectEngine, listDirectory } = require("../fs_browser");
+const compositeSequence = require("./public/composite_sequence");
+const compositeSequenceIo = require("../composite_sequence_io");
 
 const ROOT = path.resolve(__dirname, "..", "..");
 const PUBLIC = path.join(__dirname, "public");
@@ -328,14 +331,18 @@ function buildGroups(manifest, tuningFile) {
       const frames = (Array.isArray(animation.frames) ? animation.frames : [])
         .map(frameForClient)
         .filter((frame) => frame.path);
-      if (!frames.length) continue;
+      const isComposite = String(animation.kind || "") === "composite";
+      if (!frames.length && !isComposite) continue;
       const characterBaseScale = profile.bodyScale * profile.runtimeScale;
       const characterBaseScaleVector = tuningFile.values[`${characterKeyBase}.visual_scale`]
         ?? profile.defaultScaleVector
         ?? null;
       groups.push({
         name: groupName,
+        animationId,
         runtimeAnimation: `${profile.id}/${animationId}`,
+        kind: isComposite ? "composite" : "",
+        composition: isComposite ? compositeSequence.normalizeComposition(animation.composition) : null,
         profileId: profile.id,
         profileLabel: profile.label,
         profileKind: profile.kind,
@@ -348,7 +355,7 @@ function buildGroups(manifest, tuningFile) {
         anchorMode: String(animation.anchorMode || "canvas_bottom_center"),
         sourceAnchor: animation.sourceAnchor ? vector(animation.sourceAnchor) : null,
         scaleSemantic: String(animation.scaleSemantic || ""),
-        source: reslash(animation.source || path.dirname(frames[0]?.path || "")),
+        source: reslash(animation.source || path.dirname(frames[0]?.path || "") || `assets/${profile.id}/${animationId}`),
         speed: Number(animation.fps || animation.defaultFps || 12),
         frames,
         characterScale: `${characterKeyBase}.visual_size`,
@@ -388,6 +395,7 @@ function validateManifest(manifest) {
       if (String(profile.kind || "actor").toLowerCase() === "actor" && anchorMode === "canvas_left_bottom") {
         warnings.push(`${profile.id}/${animation.id || animation.name}: actor animation uses canvas_left_bottom; use canvas_bottom_center so the character enters tuner/game at the foot-center origin.`);
       }
+      if (String(animation.kind || "") === "composite" && !(animation.frames || []).length) continue;
       for (const [index, frame] of (animation.frames || []).entries()) {
         const relPath = reslash(frame.path || "");
         const fullPath = safeResolve(ROOT, relPath);
@@ -1108,6 +1116,36 @@ function normalizeTuningScaleValues(values) {
   return next;
 }
 
+function writeManifest(project, manifest) {
+  projectStore.writeJson(projectStore.projectPaths(project).manifest, manifest);
+}
+
+function persistCompositeSequences(payload, project) {
+  const entries = payload.composite_sequences || payload.compositeSequences;
+  if (!Array.isArray(entries) || !entries.length) return readManifest(project);
+  const next = compositeSequenceIo.persistCompositions(readManifest(project), entries, {
+    workspaceDir: projectStore.projectWorkspaceDir(project),
+    root: ROOT,
+    reslash,
+  });
+  writeManifest(project, next);
+  return next;
+}
+
+function handleCompositeSequenceRequest(payload, project) {
+  const result = compositeSequenceIo.handleCompositeAction(readManifest(project), payload, {
+    workspaceDir: projectStore.projectWorkspaceDir(project),
+    root: ROOT,
+    reslash,
+  });
+  writeManifest(project, result.manifest);
+  return {
+    profileId: result.profileId,
+    animationId: result.animationId,
+    name: result.animation?.name || result.animationId,
+  };
+}
+
 function saveTuningPayload(payload, project) {
   const current = readTuningFile(project);
   const supplied = (key) => Object.prototype.hasOwnProperty.call(payload, key);
@@ -1404,6 +1442,26 @@ function saveFrameAttachmentImage(payload, project) {
   };
 }
 
+function bumpAttachmentAssetHash(project, relPath, hash) {
+  const attachmentsPath = projectStore.projectPaths(project).frameImageAttachments;
+  const attachments = projectStore.readJson(attachmentsPath, []);
+  if (!Array.isArray(attachments) || !attachments.length) return;
+  let changed = false;
+  for (const entry of attachments) {
+    if (reslash(entry.path || "") === relPath) {
+      entry.assetHash = hash;
+      changed = true;
+    }
+  }
+  if (changed) projectStore.writeJson(attachmentsPath, attachments);
+}
+
+function backupPngOnce(fullPath) {
+  if (!fullPath || !fs.existsSync(fullPath)) return;
+  const backup = `${fullPath}.xsxb-backup.png`;
+  if (!fs.existsSync(backup)) fs.copyFileSync(fullPath, backup);
+}
+
 function replaceFrameImage(payload, project) {
   const relPath = reslash(payload.path || "");
   const fullPath = safeResolve(ROOT, relPath);
@@ -1413,9 +1471,13 @@ function replaceFrameImage(payload, project) {
   }
   const match = /^data:image\/png;base64,(.+)$/i.exec(String(payload.data || ""));
   if (!match) throw new Error("Expected a PNG data URL.");
+  const bytes = Buffer.from(match[1], "base64");
   fs.mkdirSync(path.dirname(fullPath), { recursive: true });
-  fs.writeFileSync(fullPath, Buffer.from(match[1], "base64"));
-  return { path: relPath, ...getPngSize(fullPath) };
+  backupPngOnce(fullPath);
+  fs.writeFileSync(fullPath, bytes);
+  const hash = contentHash(bytes);
+  bumpAttachmentAssetHash(project, relPath, hash);
+  return { path: relPath, assetHash: hash, ...getPngSize(fullPath) };
 }
 
 function projectsResponse() {
@@ -1483,11 +1545,23 @@ const server = http.createServer(async (req, res) => {
       scheduleServerRestart();
       return;
     }
+    if (req.method === "GET" && parsed.pathname === "/api/fs/list") {
+      const listed = listDirectory(parsed.searchParams.get("path") || "");
+      return send(res, 200, listed);
+    }
     if (req.method === "GET" && parsed.pathname === "/api/projects") {
       return send(res, 200, projectsResponse());
     }
     if (req.method === "POST" && parsed.pathname === "/api/projects") {
       const payload = JSON.parse(await readBody(req));
+      const projectRoot = String(payload.projectRoot || payload.path || "").trim();
+      if (projectRoot) {
+        const engine = detectEngine(projectRoot);
+        if (!engine) return send(res, 400, { error: "请选择 Godot（含 project.godot）或 Unity（含 Assets 与 ProjectSettings）工程根目录。" });
+        payload.kind = engine;
+        payload.engine = engine;
+        payload.projectRoot = projectRoot;
+      }
       const registry = projectStore.addProject(payload);
       return send(res, 200, {
         ok: true,
@@ -1560,6 +1634,25 @@ const server = http.createServer(async (req, res) => {
         configRevision: projectConfigRevision(project),
       });
     }
+    if (req.method === "POST" && parsed.pathname === "/api/composite-sequence") {
+      const payload = JSON.parse(await readBody(req));
+      const { project } = projectFromRequest(payload.projectId || parsed.searchParams.get("project"));
+      if (project?.kind === "codex_pets") return send(res, 400, { error: "Codex Pets 不支持组合序列。" });
+      const currentRevision = projectConfigRevision(project);
+      if (payload.force !== true && String(payload.configRevision || "") !== currentRevision) {
+        return send(res, 409, {
+          error: "服务器数据已被其他页面或工具更新，本次旧页面操作已阻止。请刷新页面后再操作。",
+          code: "stale_config",
+          configRevision: currentRevision,
+        });
+      }
+      const created = handleCompositeSequenceRequest(payload, project);
+      return send(res, 200, {
+        ok: true,
+        ...created,
+        configRevision: projectConfigRevision(project),
+      });
+    }
     if (req.method === "POST" && parsed.pathname === "/api/save") {
       const payload = JSON.parse(await readBody(req));
       const { project } = projectFromRequest(payload.projectId || parsed.searchParams.get("project"));
@@ -1584,6 +1677,7 @@ const server = http.createServer(async (req, res) => {
         });
       }
       saveTuningPayload(payload, project);
+      persistCompositeSequences(payload, project);
       let frameAudioBindings = null;
       if (Array.isArray(payload.frame_audio_bindings) || Array.isArray(payload.frameAudioBindings) || payload.frameAudioBindings) {
         const requestedAudio = payload.frame_audio_bindings || payload.frameAudioBindings;
@@ -1726,6 +1820,6 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, "127.0.0.1", () => {
-  console.log(`XSXB Frame Tuner running at http://127.0.0.1:${PORT}`);
+  console.log(`FrameDock running at http://127.0.0.1:${PORT}`);
   console.log(`Workspace root: ${ROOT}`);
 });

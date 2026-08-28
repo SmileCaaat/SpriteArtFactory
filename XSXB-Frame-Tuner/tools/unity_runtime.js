@@ -826,7 +826,7 @@ namespace XsxbFrameTuner.Editor
             }
             if (changed)
             {
-                Debug.Log("XSXB runtime data changed; references are maintained by the Frame Tuner sync.");
+                Debug.Log("XSXB runtime data changed; references are maintained by the FrameDock sync.");
                 ScheduleRebuild();
             }
         }

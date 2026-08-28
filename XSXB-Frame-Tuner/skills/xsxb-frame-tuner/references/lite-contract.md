@@ -1,12 +1,14 @@
-# Frame Tuner Lite Contract
+# FrameDock Lite Contract
 
-Frame Tuner Lite is the non-Godot edition of the same editor. Use it when the user wants to process frame sequences, layered animation, attack trails, transparent PNG output, or sprite sheets without binding a game project.
+FrameDock Lite is the non-Godot edition of the same editor. Use it when the user wants to process frame sequences, layered animation, attack trails, transparent PNG output, or sprite sheets without binding a game project.
 
 ## Isolation
 
 - Start Lite with `npm run start:lite`; its default address is `http://127.0.0.1:5180`. Use `LITE_PORT` only when a different Lite port is required; the Full Tuner `PORT` variable does not redirect Lite.
 - Keep Full Tuner on port `5179`. Do not reuse its project registry or project data.
 - Lite registry and edits live under `data/lite/`; stable imported assets live under `workspace/lite/`. User exports never use a fixed internal workspace path.
+- The Lite sidebar can create a new material project (`POST /api/projects` with a label) and open an existing folder under the current Lite root's `data/lite/projects/<id>`. Opening also discovers unregistered folders that already contain `animation_manifest.json`. Do not switch `XSXB_LITE_ROOT` from the UI; that still requires an environment-variable change and a server restart.
+- Full Tuner opens a Godot (`project.godot`) or Unity (`Assets/` plus `ProjectSettings`) game root through the same local folder browser (`GET /api/fs/list`). Codex Pets never exposes this open-project flow.
 - Lite projects have `kind: frame_lite`, an empty Godot root, no runtime sync, and no gameplay wiring. Frame-bound SFX is saved inside the isolated Lite workspace and exported as portable audio files plus JSON events; it is never synced to Godot. Other editor data, including collision-box metadata, remains editable and saveable. Full and Lite share the filmstrip sequence editors: drag-handle reorder, confirmed frame delete (keep at least one frame), and insert-blank transparent PNG. Codex Pets never expose these actions.
 - Never add Lite project records to `data/projects.json` or copy Lite data to a Godot project.
 
@@ -50,7 +52,14 @@ Use `--layer front` for an upper layer. Add `--independent` only when the layer 
 - The Lite UI can reverse-import a Lite export batch. The `Lite 导出包（反向导入）` source must open the browser directory picker on the batch folder that contains per-animation `spritesheet.png`/`spritesheet.json` (or sequence `export.json` + PNGs) plus the shared `audio/` folder. Do not ask the user to pick the PNG and JSON as two disconnected files for this round-trip. Recreate every primary animation, copy referenced audio into `workspace/lite/.../audio/`, restore frame bindings on `outputFrameIndex`, and restore the exported character canvas. Preserve unrelated animations' existing SFX. Because Sheet/sequence output is already baked, import it as a new material set or replace the matching animation after clearing that animation's group/frame transforms; do not stack the old character/group offsets onto the baked pixels.
 - When the Agent imports a Lite-exported `spritesheet.json`, copy its referenced audio files into the target Lite project's stable `workspace/lite/.../audio/` directory and recreate the bindings on `outputFrameIndex`. Preserve unrelated animations' existing SFX. Prefer the UI export-package path or `import_sheet.js`; both must accept in-memory audio payloads as well as files next to the JSON (`../audio/...`).
 - Clicking either export button must immediately open the browser's native writable-directory picker. Write a uniquely named batch folder under the user-selected directory; never silently export to `workspace/lite/`, Downloads, Temp, or another fixed location.
+- Keep the two export actions in the top chrome as compact buttons. Put padding, sheet columns, canvas measure, import, and delete controls in the left Outliner, not in the header.
 - Keep sprite sheets within browser canvas limits. Reduce columns or transparent padding if the UI reports an oversized sheet.
+
+## Composite Sequences
+
+- Lite shares the Full Tuner composite timeline (`composite_timeline.js`, OpenCut-style sequence-frame NLE: zoom, magnetic snap, split, live drag). Create an empty composite from the import panel (`新建组合序列（空时间线）`) or the outliner buttons, then add clips from any material set in the project (including VFX packs) or by dropping a PNG folder onto the canvas/timeline. Each added sequence becomes its own layer/track; later layers draw in front. The same track may hold non-overlapping clips side by side. Copy/paste/duplicate, trim clip ends to source frames, hide tracks or clips, and drag tracks to change stacking order. Timeline clips show each source frame; QWER select, move, rotate, and scale on the timeline and stage. Do not embed React OpenCut.
+- Composite groups may have empty `frames` while editing. `导出 PNG 序列` / `导出 Sheet + JSON` sample the timeline in milliseconds and bake every overlapping clip (including that source frame's attachments and trail slices) into one transparent output frame. Do not export the source footage groups again unless they are primary animations without `previewOwner`.
+- Hide composite UI in Codex Pets. Do not ask Godot/Unity to play clip lists; Lite has no runtime sync.
 
 ## Validation
 

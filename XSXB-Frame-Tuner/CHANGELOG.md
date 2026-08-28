@@ -4,6 +4,8 @@
 
 ### Features
 
+- Add composite sequences: a millisecond multi-track timeline of sequence-frame clips (OpenCut-style zoom, magnetic snap, split, live drag/trim) that Full and Lite bake into one ordinary PNG sequence. Do not embed the React OpenCut app.
+- Rename the visible product to FrameDock (Lite: FrameDock Lite). GitHub remote, skill id, and engine runtime paths stay the same.
 - Default newly added attack-trail sticks to path-only guides except for the current last stick, while preserving manually marked head frames.
 - Replace the split pre-stop and post-stop trail chase controls with total trail duration and tail/head speed ratio, shared by Full, Lite, exports, and Godot runtime.
 - Distinguish rendered attack-trail head frames from path-only guide sticks, with compact five-button stick controls shared by Full and Lite.
@@ -11,10 +13,15 @@
 - Make Lite export every playable source frame exactly once as a baked owner/attachment/trail composite, with authored frame durations retained as metadata.
 - Reverse-import Lite Sheet + JSON (and PNG sequence) export batches from the UI by selecting the batch folder, restoring animations, audio, and the character canvas.
 - Reorder, delete, and insert blank frames in the Full and Lite filmstrips. Blank frames are transparent PNGs; Codex Pets stays read-only for sequence length.
+- Open a Godot or Unity project from the Full Tuner sidebar, and create or discover Lite material projects under the current Lite root, using a local folder browser instead of `showDirectoryPicker`.
+- Edit the current frame's untransformed owner PNG and attachment layers in a Photopea iframe and write the pixels back through `/api/replace-frame`.
+- Replace hold-R/Z plus wheel with Maya/Unity-style QWER select/move/rotate/scale gizmos, including canvas transforms for the owner sprite.
+- Pan only with the middle mouse button; open a context menu on right-click; use Ctrl+Z/Y, Ctrl+C/V, Ctrl+D, and Delete instead of filmstrip click-to-copy/delete.
+- Restyle the editor chrome to the Unreal Engine 5 Slate palette (dark gray panels, `#0070e0` selection, no offset hard shadows).
 
 ### Documentation
 
-- Document filmstrip sequence editing and Lite export-package reverse import in the tuner README, Lite/UI contracts, and local feature notes.
+- Restructure the tuner README around Full vs Lite, composite timelines, and current editor shortcuts. Document composite NLE behavior, Lite export-package reverse import, local project open/create, Photopea pixel writeback, and QWER gizmos in the README, Lite/UI contracts, and local feature notes.
 
 ### Fixes
 

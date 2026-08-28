@@ -22,6 +22,9 @@ const { TOOL_ROOT, LITE_ROOT } = require("./lite_paths");
 const { importPngFrames, importPngSheet } = require("./import_payload");
 const { deleteLiteAnimation, deleteLiteProfile } = require("./lite_delete");
 const { editFrameSequence, neighborFrameSize, writeBlankFrameFile } = require("../frame_sequence_edit");
+const { listDirectory } = require("../fs_browser");
+const compositeSequence = require("../animation_tuner/public/composite_sequence");
+const compositeSequenceIo = require("../composite_sequence_io");
 const ROOT = LITE_ROOT;
 const FULL_PUBLIC = path.join(TOOL_ROOT, "tools", "animation_tuner", "public");
 const LITE_PUBLIC = path.join(__dirname, "public");
@@ -209,12 +212,15 @@ function buildGroups(manifest, tuning) {
       const characterKey = `profiles.${profile.id}.character`;
       const groupKey = `profiles.${profile.id}.groups.${id}`;
       const frames = (animation.frames || []).map(frameForClient).filter((frame) => frame.path);
-      if (!frames.length) continue;
+      const isComposite = String(animation.kind || "") === "composite";
+      if (!frames.length && !isComposite) continue;
       const defaultScale = Number(animation.defaultScale ?? 1);
       groups.push({
         name,
         animationId: id,
         runtimeAnimation: `${profile.id}/${id}`,
+        kind: isComposite ? "composite" : "",
+        composition: isComposite ? compositeSequence.normalizeComposition(animation.composition) : null,
         profileId: profile.id,
         profileLabel: profile.label,
         profileKind: profile.kind,
@@ -225,7 +231,7 @@ function buildGroups(manifest, tuning) {
         tuningTarget: "",
         anchorMode: String(animation.anchorMode || "canvas_bottom_center"),
         sourceAnchor: animation.sourceAnchor ? vector(animation.sourceAnchor) : null,
-        source: reslash(animation.source || path.dirname(frames[0]?.path || "")),
+        source: reslash(animation.source || path.dirname(frames[0]?.path || "") || `assets/${profile.id}/${id}`),
         speed: Number(animation.fps || 12),
         frames,
         previewOwner: String(animation.previewOwner || ""),
@@ -495,6 +501,7 @@ function configResponse(projectId) {
   if (!project) {
     return {
       root: ROOT, workspaceRoot: path.join(ROOT, "workspace", "lite"), workspaceAllRoot: path.join(ROOT, "workspace", "lite"), projectRoot: "",
+      liteProjectsRoot: path.join(ROOT, "data", "lite", "projects"),
       activeProjectId: "", activeProject: null, projects, scenes: [], profiles: [], frameAudioBindings: [], frameImageAttachments: [],
       attackTrails: EMPTY_ATTACK_TRAILS, tuning: clone(EMPTY_TUNING), warnings: ["Lite 还没有素材。请让 Agent 导入 PNG 序列或 PNG+JSON sheet。"],
       references: {}, projectKind: "frame_lite", liteSettings: clone(EMPTY_SETTINGS), groups: [], configRevision: "",
@@ -503,6 +510,7 @@ function configResponse(projectId) {
   const data = projectData(project);
   return {
     root: ROOT, workspaceRoot: data.target.workspaceDir, workspaceAllRoot: path.join(ROOT, "workspace", "lite"), projectRoot: "",
+    liteProjectsRoot: path.join(ROOT, "data", "lite", "projects"),
     activeProjectId: project.id, activeProject: store.projectForClient(project), projects, scenes: [],
     profiles: data.manifest.profiles.map((profile) => ({ id: profile.id, label: profile.label, kind: profile.kind, scale_semantic: "character_group_frame", anchor_mode: "manifest_anchor_mode", supports: profile.supports })),
     frameAudioBindings: data.audio, frameImageAttachments: data.attachments, attackTrails: data.attackTrails,
@@ -532,8 +540,21 @@ function replaceFrame(project, payload) {
   const workspace = store.paths(project).workspaceDir;
   const match = /^data:image\/png;base64,([A-Za-z0-9+/=\r\n]+)$/i.exec(String(payload.data || ""));
   if (!full || !isInside(full, workspace) || path.extname(full).toLowerCase() !== ".png" || !match) throw new Error("Frame replacement must be a PNG inside the active Lite workspace.");
-  fs.writeFileSync(full, Buffer.from(match[1], "base64"));
-  return { path: reslash(path.relative(ROOT, full)), ...pngSize(full) };
+  const bytes = Buffer.from(match[1], "base64");
+  if (fs.existsSync(full) && !fs.existsSync(`${full}.xsxb-backup.png`)) fs.copyFileSync(full, `${full}.xsxb-backup.png`);
+  fs.writeFileSync(full, bytes);
+  const hash = crypto.createHash("sha256").update(bytes).digest("hex");
+  const relPath = reslash(path.relative(ROOT, full));
+  const attachments = store.readJson(store.paths(project).frameImageAttachments, []);
+  let changed = false;
+  for (const entry of attachments) {
+    if (reslash(entry.path || "") === relPath) {
+      entry.assetHash = hash;
+      changed = true;
+    }
+  }
+  if (changed) store.writeJson(store.paths(project).frameImageAttachments, attachments);
+  return { path: relPath, assetHash: hash, ...pngSize(full) };
 }
 
 function importLiteAnimation(project, payload) {
@@ -605,15 +626,25 @@ function savePayload(project, payload) {
   saveSharedAttackTrailPresets(ROOT, `lite:${project.id}`, trails.presets);
   const projectTrails = attackTrailsWithoutSharedPresets(trails);
   store.writeJson(target.attackTrails, projectTrails);
+  const compositions = payload.composite_sequences || payload.compositeSequences;
+  if (Array.isArray(compositions) && compositions.length) {
+    const nextManifest = compositeSequenceIo.persistCompositions(
+      store.readJson(target.manifest, EMPTY_MANIFEST),
+      compositions,
+      { workspaceDir: target.workspaceDir, root: ROOT, reslash }
+    );
+    store.writeJson(target.manifest, nextManifest);
+  }
   return { tuning, audio, attachments, trails: projectTrails };
 }
 
 function serveIndex(res) {
   let html = fs.readFileSync(path.join(FULL_PUBLIC, "index.html"), "utf8");
-  html = html.replace("<title>XSXB Frame Tuner</title>", "<title>XSXB Frame Tuner Lite</title>")
-    .replace("<h1>XSXB Frame Tuner</h1>", "<h1>XSXB Frame Tuner Lite</h1>")
-    .replace("</head>", "  <link rel=\"stylesheet\" href=\"/lite.css\" />\n  </head>")
-    .replace("</body>", "    <script src=\"/export_package.js\"></script>\n    <script src=\"/lite.js\"></script>\n  </body>");
+  html = html.replace("<title>FrameDock</title>", "<title>FrameDock Lite</title>")
+    .replace("<h1>FrameDock</h1>", "<h1>FrameDock Lite</h1>")
+    .replace("<strong>FrameDock</strong>", "<strong>FrameDock Lite</strong>")
+    .replace("</head>", "  <link rel=\"stylesheet\" href=\"/lite.css?v=20260828-composite\" />\n  </head>")
+    .replace("</body>", "    <script src=\"/export_package.js\"></script>\n    <script src=\"/lite.js?v=20260828-composite\"></script>\n  </body>");
   return send(res, 200, html, "text/html; charset=utf-8");
 }
 
@@ -636,9 +667,32 @@ const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, "http://127.0.0.1");
     if (req.method === "GET" && url.pathname === "/api/update-status") return send(res, 200, { updateAvailable: false, lite: true });
+    if (req.method === "GET" && url.pathname === "/api/fs/list") {
+      return send(res, 200, listDirectory(url.searchParams.get("path") || ""));
+    }
     if (req.method === "GET" && url.pathname === "/api/projects") {
       const registry = store.readRegistry();
       return send(res, 200, { activeProjectId: registry.activeProjectId, projects: registry.projects.map(store.projectForClient) });
+    }
+    if (req.method === "POST" && url.pathname === "/api/projects") {
+      const payload = JSON.parse(await readBody(req));
+      const action = String(payload.action || "").toLowerCase();
+      const folder = String(payload.projectRoot || payload.path || "").trim();
+      let registry;
+      if (action === "discover" || payload.discover === true) {
+        registry = store.discoverProjects();
+      } else if (folder) {
+        registry = store.registerProjectFromFolder(folder);
+      } else {
+        const label = String(payload.label || payload.name || payload.id || "lite_project");
+        store.ensureProject(payload.id || label, label);
+        registry = store.readRegistry();
+      }
+      return send(res, 200, {
+        ok: true,
+        activeProjectId: registry.activeProjectId,
+        projects: registry.projects.map(store.projectForClient),
+      });
     }
     if (req.method === "POST" && url.pathname === "/api/projects/active") {
       const payload = JSON.parse(await readBody(req));
@@ -681,6 +735,32 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, {
         ok: true,
         ...edited,
+        configRevision: projectConfigRevision(project),
+      });
+    }
+    if (req.method === "POST" && url.pathname === "/api/composite-sequence") {
+      const payload = JSON.parse(await readBody(req));
+      const project = store.resolveProject(payload.projectId);
+      if (!project) return send(res, 404, { error: "Lite project not found." });
+      const currentRevision = projectConfigRevision(project);
+      if (payload.force !== true && String(payload.configRevision || "") !== currentRevision) {
+        return send(res, 409, {
+          error: "服务器数据已被其他页面或工具更新，本次旧页面操作已阻止。请刷新页面后再操作。",
+          code: "stale_config",
+          configRevision: currentRevision,
+        });
+      }
+      const result = compositeSequenceIo.handleCompositeAction(
+        store.readJson(store.paths(project).manifest, EMPTY_MANIFEST),
+        payload,
+        { workspaceDir: store.paths(project).workspaceDir, root: ROOT, reslash }
+      );
+      store.writeJson(store.paths(project).manifest, result.manifest);
+      return send(res, 200, {
+        ok: true,
+        profileId: result.profileId,
+        animationId: result.animationId,
+        name: result.animation?.name || result.animationId,
         configRevision: projectConfigRevision(project),
       });
     }
@@ -830,7 +910,7 @@ const server = http.createServer(async (req, res) => {
 
 if (require.main === module) {
   server.listen(PORT, "127.0.0.1", () => {
-    console.log(`XSXB Frame Tuner Lite running at http://127.0.0.1:${PORT}`);
+    console.log(`FrameDock Lite running at http://127.0.0.1:${PORT}`);
     console.log(`Tool root: ${TOOL_ROOT}`);
     console.log(`Lite data root: ${LITE_ROOT}`);
     console.log(`Lite registry: ${store.path}`);

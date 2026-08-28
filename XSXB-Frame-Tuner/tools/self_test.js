@@ -45,6 +45,7 @@ const {
   writeBlankFrameFile,
 } = require("./frame_sequence_edit");
 const { detectExportPackage, audioLookupKeys, isLiteBakedMeta } = require("./frame_tuner_lite/export_package");
+const { detectEngine, isLiteProjectDir, listDirectory } = require("./fs_browser");
 const { bindingScopeForProject, createProjectStore, projectEngine } = require("./project_store");
 const { syncGodotProject } = require("./godot_sync");
 const { buildRuntimeData } = require("./runtime_data");
@@ -542,6 +543,9 @@ assert.match(attackTrailEditorSource, /应用预设（全局通用）/);
 assert.match(attackTrailEditorSource, /upsertAttackTrailPresetByName\(\(this\.data\.presets \|\|= \[\]\), segment\)/);
 assert.match(attackTrailEditorSource, /if \(!preview\?\.presetOnly\) return preview;\s*return this\._trailFromSavedPreset\(preview\)/);
 const tunerHtmlSource = fs.readFileSync(path.join(__dirname, "animation_tuner", "public", "index.html"), "utf8");
+assert.match(tunerHtmlSource, /<title>FrameDock<\/title>/);
+assert.match(tunerHtmlSource, /<strong>FrameDock<\/strong>/);
+assert.doesNotMatch(tunerHtmlSource, /XSXB Frame Tuner/);
 assert.match(tunerHtmlSource, /id="attackTrailNew"[^>]*>保存<\/button>/);
 assert.match(tunerHtmlSource, /id="attackTrailPresetName"[^>]*maxlength="60"/);
 assert.match(tunerHtmlSource, /id="attackTrailAddStick"[^>]*>＋<\/button>/);
@@ -624,15 +628,215 @@ assert.match(attackTrailEditorSource, /frameSlices: resolvedFrameSlices \|\| \{\
 assert.match(attackTrailEditorSource, /_startFixedPreview\(\)[\s\S]*?this\.staticEditPreview = false;\s*this\.previewing = true;/);
 const tunerAppSource = fs.readFileSync(path.join(__dirname, "animation_tuner", "public", "app.js"), "utf8");
 const tunerStyleSource = fs.readFileSync(path.join(__dirname, "animation_tuner", "public", "style.css"), "utf8");
+const photopeaBridgeSource = fs.readFileSync(path.join(__dirname, "animation_tuner", "public", "photopea_bridge.js"), "utf8");
 assert.match(tunerAppSource, /frame\?\.assetVersion \|\| frame\?\.assetHash/);
 const tunerAttackTrailSource = fs.readFileSync(path.join(__dirname, "animation_tuner", "public", "attack_trails.js"), "utf8");
 const tunerServerSource = fs.readFileSync(path.join(__dirname, "animation_tuner", "server.js"), "utf8");
 const godotAttackTrailRendererSource = fs.readFileSync(path.join(__dirname, "runtime", "xsxb_attack_trail_renderer.gd"), "utf8");
 const liteUiSource = fs.readFileSync(path.join(__dirname, "frame_tuner_lite", "public", "lite.js"), "utf8");
 const liteServerSource = fs.readFileSync(path.join(__dirname, "frame_tuner_lite", "server.js"), "utf8");
+assert.match(liteUiSource, /title\.textContent = "FrameDock Lite"/);
+assert.match(liteServerSource, /<title>FrameDock Lite<\/title>/);
 const liteContractSource = fs.readFileSync(path.join(__dirname, "..", "skills", "xsxb-frame-tuner", "references", "lite-contract.md"), "utf8");
 const liteImportFramesSource = fs.readFileSync(path.join(__dirname, "frame_tuner_lite", "import_frames.js"), "utf8");
 const liteImportSheetSource = fs.readFileSync(path.join(__dirname, "frame_tuner_lite", "import_sheet.js"), "utf8");
+assert.match(tunerAppSource, /window\.XsxbFrameTunerLite/);
+const compositeSequence = require("./animation_tuner/public/composite_sequence");
+const overlapLeft = {
+  id: "a",
+  source: { profileId: "hero", animationId: "idle" },
+  trackId: "track_0",
+  startMs: 0,
+  sourceStartFrame: 0,
+  sourceEndFrame: 1,
+  transform: { offset: { x: 0, y: 0 }, scale: 1, scaleX: 1, scaleY: 1, rotation: 0 },
+};
+const overlapRight = {
+  id: "b",
+  source: { profileId: "hero", animationId: "slash" },
+  trackId: "track_1",
+  startMs: 80,
+  sourceStartFrame: 0,
+  sourceEndFrame: 0,
+  transform: { offset: { x: 12, y: 0 }, scale: 1, scaleX: 1, scaleY: 1, rotation: 0 },
+};
+const overlapGroups = [
+  { profileId: "hero", animationId: "idle", speed: 10, frames: [{ duration: 1 }, { duration: 1 }] },
+  { profileId: "hero", animationId: "slash", speed: 10, frames: [{ duration: 1 }] },
+];
+const overlapComposition = compositeSequence.normalizeComposition({
+  durationMs: 200,
+  tracks: [{ id: "track_0", name: "1" }, { id: "track_1", name: "2" }],
+  clips: [overlapLeft, overlapRight],
+});
+const overlapSamples = compositeSequence.activeClipsAtTime(overlapComposition, 90, (clip) => compositeSequence.matchSourceGroup(overlapGroups, clip));
+assert.equal(overlapSamples.length, 2);
+assert.equal(overlapSamples[0].clip.id, "a");
+assert.equal(overlapSamples[1].clip.id, "b");
+assert.equal(overlapSamples[1].frameIndex, 0);
+const fromSource = compositeSequence.createCompositionFromSource(overlapGroups[0]);
+assert.equal(fromSource.clips.length, 1);
+assert.equal(fromSource.tracks.length, 1);
+assert.equal(fromSource.clips[0].source.animationId, "idle");
+assert.equal(compositeSequence.matchSourceGroup([
+  { profileId: "hero", animationId: "cast", name: "cast", frames: [{ duration: 1 }] },
+  { profileId: "vfx", animationId: "cast", name: "cast", frames: [{ duration: 1 }, { duration: 1 }] },
+], { source: { profileId: "vfx", animationId: "cast" } }).profileId, "vfx");
+const layerComp = compositeSequence.createEmptyComposition();
+assert.equal(layerComp.tracks.length, 0);
+const layerA = compositeSequence.addLayerTrack(layerComp, { name: "idle" });
+const layerB = compositeSequence.addLayerTrack(layerComp, { name: "slash" });
+assert.equal(layerComp.tracks.length, 2);
+assert.notEqual(layerA.id, layerB.id);
+compositeSequence.reorderTracks(layerComp, 1, 0);
+assert.equal(layerComp.tracks[0].id, layerB.id);
+assert.equal(layerComp.tracks[1].id, layerA.id);
+const trimSource = { speed: 10, frames: [{ duration: 1 }, { duration: 1 }, { duration: 1 }] };
+const trimClip = {
+  startMs: 0,
+  sourceStartFrame: 0,
+  sourceEndFrame: 2,
+  trackId: layerA.id,
+};
+compositeSequence.trimClipEdge(trimClip, trimSource, "right", 100);
+assert.equal(trimClip.sourceEndFrame, 0);
+compositeSequence.trimClipEdge(trimClip, trimSource, "left", 0);
+const splitSource = { speed: 10, frames: [{ duration: 1 }, { duration: 1 }, { duration: 1 }] };
+const splitTarget = {
+  id: "split_src",
+  startMs: 0,
+  sourceStartFrame: 0,
+  sourceEndFrame: 2,
+  trackId: layerA.id,
+};
+assert.equal(compositeSequence.splitClip(splitTarget, splitSource, 0), null);
+const splitResult = compositeSequence.splitClip(splitTarget, splitSource, 100);
+assert.equal(splitTarget.sourceEndFrame, 0);
+assert.equal(splitResult.right.sourceStartFrame, 1);
+assert.equal(splitResult.right.startMs, 100);
+assert.notEqual(splitResult.right.id, splitTarget.id);
+const hiddenClip = {
+  id: "hidden",
+  source: { profileId: "hero", animationId: "idle" },
+  trackId: "track_0",
+  startMs: 0,
+  sourceStartFrame: 0,
+  sourceEndFrame: 1,
+  hidden: true,
+};
+assert.equal(compositeSequence.activeClipsAtTime({
+  durationMs: 200,
+  tracks: [{ id: "track_0", name: "1" }],
+  clips: [hiddenClip],
+}, 10, () => overlapGroups[0]).length, 0);
+assert.equal(compositeSequence.activeClipsAtTime({
+  durationMs: 200,
+  tracks: [{ id: "track_0", name: "1", hidden: true }],
+  clips: [{ ...hiddenClip, id: "visible-on-hidden-track", hidden: false }],
+}, 10, () => overlapGroups[0]).length, 0);
+const cloned = compositeSequence.cloneClip(overlapLeft, { id: "cloned", trackId: "track_new", startMs: 40 });
+assert.equal(cloned.id, "cloned");
+assert.equal(cloned.trackId, "track_new");
+assert.equal(cloned.startMs, 40);
+assert.notEqual(cloned.id, overlapLeft.id);
+assert.equal(compositeSequence.isCompositeGroup({ kind: "composite" }), true);
+assert.equal(compositeSequence.isCompositeGroup({ kind: "actor" }), false);
+const baked = compositeSequence.bakeTimeline(overlapComposition, (clip) => compositeSequence.matchSourceGroup(overlapGroups, clip));
+assert.ok(baked.samples.length >= 2);
+const created = compositeSequence.upsertCompositeAnimation({ schemaVersion: 1, profiles: [] }, {
+  profileId: "hero",
+  animationId: "combo",
+  fromSource: overlapGroups[0],
+});
+assert.equal(created.animation.kind, "composite");
+assert.equal(created.animation.frames.length, 0);
+const mixedManifest = {
+  schemaVersion: 1,
+  profiles: [{
+    id: "Hero",
+    label: "Hero",
+    animations: [{ id: "Idle", name: "Idle", fps: 12, frames: [{ duration: 1 }] }],
+  }],
+};
+const mixedCreated = compositeSequence.upsertCompositeAnimation(mixedManifest, {
+  profileId: "Hero",
+  animationId: "Idle_comp",
+  fromSource: { profileId: "Hero", animationId: "Idle", speed: 12, frames: [{ duration: 1 }] },
+});
+assert.equal(mixedCreated.profileId, "Hero");
+assert.equal(mixedCreated.manifest.profiles.length, 1);
+assert.equal(mixedCreated.manifest.profiles[0].id, "Hero");
+assert.equal(mixedCreated.manifest.profiles[0].animations.length, 2);
+const compositeSequenceIo = require("./composite_sequence_io");
+const fromCurrent = compositeSequenceIo.createComposite({
+  schemaVersion: 1,
+  profiles: [{
+    id: "Hero",
+    label: "Hero",
+    animations: [{ id: "Idle", name: "Idle", kind: "actor", fps: 12, frames: [{ duration: 1 }] }],
+  }],
+}, {
+  profileId: "Hero",
+  fromAnimationId: "Idle",
+  animationId: "Idle_comp",
+  name: "Idle_comp",
+});
+assert.equal(fromCurrent.profileId, "Hero");
+assert.equal(fromCurrent.manifest.profiles.length, 1);
+assert.equal(fromCurrent.animation.kind, "composite");
+assert.equal(fromCurrent.animation.composition.clips.length, 1);
+const emptyComposite = compositeSequenceIo.createComposite({
+  schemaVersion: 1,
+  profiles: [{ id: "Hero", label: "Hero", animations: [] }],
+}, { profileId: "Hero", animationId: "composite", name: "composite" });
+assert.equal(emptyComposite.profileId, "Hero");
+assert.equal(emptyComposite.manifest.profiles.length, 1);
+assert.match(tunerAppSource, /function compositeTargetProfileId\(/);
+assert.match(tunerAppSource, /status\(t\("compositeCreated", \{ name: created\.name \|\| created\.animationId \}\), \{ sticky: true \}\)/);
+assert.match(tunerHtmlSource, /id="createCompositeFromCurrent"/);
+assert.match(tunerHtmlSource, /id="createCompositeEmpty"/);
+assert.match(tunerHtmlSource, /id="compositeAddClipSelect"/);
+const addClipSelectSource = tunerAppSource.match(/function populateCompositeAddClipSelect\(\) \{[\s\S]*?\n\}/)?.[0] || "";
+assert.match(addClipSelectSource, /<optgroup label=/);
+assert.doesNotMatch(addClipSelectSource, /group\.profileId === currentGroup\.profileId/);
+assert.match(tunerAppSource, /function compositeClipFrameSlices\(/);
+assert.match(tunerAppSource, /compositeTimelineFrame/);
+assert.match(tunerAppSource, /mode: tool === "rotate" \? "composite-rotate" : "composite-scale"/);
+assert.match(tunerAppSource, /addLayerTrack/);
+assert.match(tunerAppSource, /kind: "composite"/);
+assert.match(tunerAppSource, /trimClipEdge/);
+assert.match(tunerAppSource, /composite-track-reorder/);
+assert.match(tunerAppSource, /compositeTimelineTrackHandle/);
+assert.match(tunerAppSource, /compositeTimelineTrackEye/);
+assert.match(tunerAppSource, /toggleCompositeTrackHidden/);
+assert.match(tunerHtmlSource, /composite_sequence\.js/);
+assert.match(tunerHtmlSource, /composite_timeline\.js/);
+assert.match(tunerAppSource, /ensureCompositeTimelineView/);
+assert.match(tunerAppSource, /XsxbCompositeTimeline/);
+assert.match(tunerAppSource, /splitSelectedCompositeClips/);
+const compositeTimelineSource = fs.readFileSync(path.join(__dirname, "animation_tuner", "public", "composite_timeline.js"), "utf8");
+assert.match(compositeTimelineSource, /ocToolbar/);
+assert.match(compositeTimelineSource, /function applyLayout\(/);
+assert.match(compositeTimelineSource, /pending-move/);
+assert.match(tunerAppSource, /function isCompositeGroup\(/);
+assert.match(tunerAppSource, /function renderCompositeTimeline\(/);
+assert.match(tunerAppSource, /composite-marquee/);
+assert.match(tunerAppSource, /function drawSelectionRect\(/);
+assert.match(tunerAppSource, /function selectFramesInClientRect\(/);
+assert.match(tunerAppSource, /filmstrip-marquee/);
+assert.match(tunerAppSource, /composite-timeline-marquee/);
+assert.match(tunerAppSource, /function finishCompositeStageMarquee\(/);
+assert.match(tunerAppSource, /mode: "composite-move"/);
+assert.match(tunerAppSource, /composite_sequences: compositeSequencesForSave/);
+assert.match(tunerAppSource, /projectKind !== "codex_pets"/);
+assert.match(tunerAppSource, /els.compositeActions.hidden = !show/);
+assert.match(tunerServerSource, /\/api\/composite-sequence/);
+assert.match(tunerServerSource, /const isComposite = String\(animation\.kind \|\| ""\) === "composite"/);
+assert.match(liteServerSource, /\/api\/composite-sequence/);
+assert.match(liteUiSource, /value="composite">新建组合序列（空时间线）/);
+assert.match(liteContractSource, /Composite Sequences/);
+assert.match(liteContractSource, /OpenCut-style sequence-frame NLE/);
+assert.match(liteContractSource, /Do not embed React OpenCut/);
 assert.match(tunerAppSource, /window\.XsxbFrameTunerLite/);
 assert.match(tunerAppSource, /function frameAudioKey[\s\S]*?tuningAnimationName\(group\)/);
 assert.match(tunerServerSource, /values: tuningFile\.values/);
@@ -675,9 +879,9 @@ assert.match(tunerAppSource, /\.filter\(\(attachment\) => !isMarkerOnlyFrameAtta
 assert.match(tunerAppSource, /function liteExportAudio\(/);
 assert.match(tunerAppSource, /XsxbTimingModes\.bakedSequenceSamples\(playableFrames\)/);
 assert.match(tunerAppSource, /if \(attackTrailEditor\?\.isContinuous\(\)\) return true/);
-assert.match(tunerAppSource, /data-action="duplicate-frame"/);
+assert.match(tunerAppSource, /"duplicate-frame"/);
 assert.match(tunerAppSource, /async function duplicateFrameAfter\(/);
-assert.match(tunerAppSource, /data-action="delete-frame"/);
+assert.match(tunerAppSource, /"delete-frame"/);
 assert.match(tunerAppSource, /data-action="insert-blank-frame"/);
 assert.match(tunerAppSource, /\/api\/edit-frames/);
 assert.match(tunerAppSource, /function setupFrameReorderHandle\(/);
@@ -686,7 +890,76 @@ assert.match(tunerAppSource, /async function insertBlankFrameAfter\(/);
 assert.match(tunerStyleSource, /\.frameReorderHandle/);
 assert.match(tunerStyleSource, /\.frameDeleteButton/);
 assert.match(tunerHtmlSource, /<script src="\/app\.js\?/);
+assert.match(tunerHtmlSource, /<script src="\/photopea_bridge\.js\?/);
+assert.match(tunerHtmlSource, /id="openProject"/);
+assert.match(tunerHtmlSource, /id="newLiteProject"/);
+assert.match(tunerHtmlSource, /id="photopeaEdit"/);
+assert.match(tunerHtmlSource, /id="toolSelect"[^>]*data-tool-mode="select"/);
+assert.match(tunerHtmlSource, /id="toolMove"[^>]*data-tool-mode="move"/);
+assert.match(tunerHtmlSource, /id="toolRotate"[^>]*data-tool-mode="rotate"/);
+assert.match(tunerHtmlSource, /id="toolScale"[^>]*data-tool-mode="scale"/);
+assert.match(tunerHtmlSource, /id="toolPivot"[^>]*data-tool-mode="pivot"/);
+assert.match(tunerHtmlSource, /id="rebaseGroupOrigin"/);
+assert.match(tunerHtmlSource, /id="alignTransformPivot"/);
+assert.match(tunerHtmlSource, /https:\/\/www\.photopea\.com|photopeaFrame/);
 assert.doesNotMatch(tunerHtmlSource, /app\.v20/);
+assert.match(tunerAppSource, /\/api\/fs\/list/);
+assert.match(tunerAppSource, /KeyQ: "select"/);
+assert.match(tunerAppSource, /KeyO: "pivot"/);
+assert.match(tunerAppSource, /toolMode/);
+assert.match(tunerAppSource, /drawTransformGizmo\(/);
+assert.match(tunerAppSource, /function alignTransformPivotToOrigin\(/);
+assert.match(tunerAppSource, /function photopeaBakeFrame\(/);
+assert.match(tunerAppSource, /groupTransformPivotKey/);
+assert.match(tunerAppSource, /event\.button === 1/);
+assert.match(tunerAppSource, /copyEditorSelection/);
+assert.match(tunerAppSource, /deleteEditorSelection/);
+assert.match(tunerAppSource, /showContextMenu/);
+assert.match(tunerAppSource, /key === "z"/);
+assert.match(tunerAppSource, /PHOTOPEA_ORIGIN|XsxbPhotopeaBridge/);
+assert.match(photopeaBridgeSource, /https:\/\/www\.photopea\.com/);
+assert.match(photopeaBridgeSource, /ArrayBuffer/);
+assert.match(tunerHtmlSource, /class="outliner"/);
+assert.match(tunerHtmlSource, /class="details"/);
+assert.match(tunerHtmlSource, /class="paneLabel"/);
+assert.match(tunerHtmlSource, /class="viewportToolbar"/);
+assert.match(tunerHtmlSource, /id="splitFilmstrip"/);
+assert.match(tunerHtmlSource, /class="canvasPane"/);
+assert.match(tunerHtmlSource, /data-editor-mode="transform"/);
+assert.match(tunerHtmlSource, /class="statusBar"/);
+assert.match(tunerStyleSource, /--filmstrip-h/);
+assert.match(tunerStyleSource, /--elev-1/);
+assert.match(tunerStyleSource, /--duration: 90ms/);
+assert.match(tunerStyleSource, /\.viewportToolbar/);
+assert.match(tunerStyleSource, /\.splitGutterY/);
+assert.match(tunerStyleSource, /100vw - 12px/);
+assert.match(tunerAppSource, /function setupWorkspaceSplits\(/);
+assert.match(tunerAppSource, /function setEditorMode\(/);
+assert.match(tunerAppSource, /function bakePhotopeaLayers\(/);
+assert.match(tunerAppSource, /function unbakePhotopeaLayer\(/);
+assert.match(tunerAppSource, /function pinPhotopeaBakeCorners\(/);
+assert.match(tunerAppSource, /function syncPlayPauseButton\(/);
+assert.match(tunerHtmlSource, /id="playPause"[^>]*>▶/);
+assert.match(tunerAppSource, /reuseAudio: true/);
+assert.match(tunerAppSource, /skipPreload: true/);
+assert.match(tunerAppSource, /async function restoreAssetSnapshots\(/);
+assert.match(tunerAppSource, /label: "photopea"/);
+assert.match(tunerAppSource, /\/api\/replace-frame/);
+assert.doesNotMatch(tunerAppSource, /window\.confirm\(t\("frameAttachmentDeleteConfirm"\)\)/);
+assert.match(photopeaBridgeSource, /resizeCanvas\(\$\{canvasW\}, \$\{canvasH\}, AnchorPosition\.MIDDLE\)/);
+assert.match(photopeaBridgeSource, /xsxbCenterDocument/);
+assert.match(photopeaBridgeSource, /pngSizeFromBuffer/);
+assert.match(photopeaBridgeSource, /pngDataUrlToBuffer/);
+assert.match(photopeaBridgeSource, /xsxb-frame/);
+assert.doesNotMatch(photopeaBridgeSource, /xsxb-export/);
+assert.match(tunerServerSource, /parsed\.pathname === "\/api\/fs\/list"/);
+assert.match(tunerServerSource, /parsed\.pathname === "\/api\/replace-frame"/);
+assert.match(tunerServerSource, /require\("\.\.\/fs_browser"\)/);
+assert.match(liteServerSource, /url\.pathname === "\/api\/fs\/list"/);
+assert.match(liteServerSource, /url\.pathname === "\/api\/projects"/);
+assert.match(liteServerSource, /action === "discover"/);
+assert.match(liteServerSource, /registerProjectFromFolder/);
+assert.match(liteServerSource, /url\.pathname === "\/api\/replace-frame"/);
 assert.match(tunerAppSource, /selectedGuidePreviewActive: \(\) => !playing && !Number\.isFinite\(liteExportTime\)/);
 assert.match(tunerAttackTrailSource, /isEditingWorkspace\(\) \{\s*return this\.enabled && \(this\.workspaceMode === "draw" \|\| this\.workspaceMode === "insert"\);/);
 assert.match(tunerAttackTrailSource, /this\.hooks\.attachmentEditingLockChanged\?\.\(locked\)/);
@@ -724,7 +997,8 @@ assert.match(liteServerSource, /\/api\/lite\/delete-profile/);
 assert.match(liteUiSource, /liteImportAnimationPreset/);
 assert.match(liteUiSource, /序列类型/);
 assert.match(liteUiSource, /\/api\/lite\/import-animation/);
-assert.match(liteUiSource, /透明序列导出/);
+assert.match(liteUiSource, /liteChromeExport/);
+assert.match(liteUiSource, /querySelector\("\.outliner"\)/);
 assert.match(liteServerSource, /\/api\/lite\/import-animation/);
 assert.match(liteServerSource, /function importLiteAnimation\(/);
 assert.match(tunerAppSource, /xsxb-lite-imported/);
@@ -778,9 +1052,30 @@ assert.match(liteContractSource, /portable audio files plus JSON events/);
 assert.match(liteContractSource, /insert-blank transparent PNG/);
 const uiContractSource = fs.readFileSync(path.join(__dirname, "..", "skills", "xsxb-frame-tuner", "references", "ui-contract.md"), "utf8");
 assert.match(uiContractSource, /## Sequence Frames/);
+assert.match(uiContractSource, /## Composite Sequences/);
+assert.match(uiContractSource, /OpenCut classic/);
+assert.match(uiContractSource, /Do not embed the React OpenCut app/);
 assert.match(uiContractSource, /Do not reuse attachment-layer card dragging/);
 assert.match(uiContractSource, /Keep at least one frame/);
 assert.match(uiContractSource, /blank transparent PNG/);
+assert.match(uiContractSource, /Do not use hold-R or hold-Z plus mouse wheel/);
+assert.match(uiContractSource, /baked to the current editor composite/);
+assert.match(uiContractSource, /Center that composite in a square Photopea canvas/);
+assert.match(uiContractSource, /Use O to drag the W\/E\/R yellow transform pivot/);
+assert.match(uiContractSource, /变换枢轴对齐/);
+assert.match(uiContractSource, /Q\/W\/E\/R\/O/);
+assert.match(uiContractSource, /user-resizable splitter/);
+assert.match(uiContractSource, /Photopea writeback is undoable/);
+assert.match(uiContractSource, /do not confirm attachment deletion/);
+assert.match(uiContractSource, /viewport overlay/);
+assert.match(uiContractSource, /Outliner/);
+assert.match(uiContractSource, /Adwaita-like rounded corners/);
+assert.match(uiContractSource, /editor modes Transform, Boxes, and Trails/);
+assert.match(uiContractSource, /Right-click opens a context menu/);
+assert.match(uiContractSource, /Middle-mouse drag always pans/);
+assert.match(uiContractSource, /Ctrl\+Z \/ Ctrl\+Y/);
+assert.match(liteContractSource, /POST \/api\/projects/);
+assert.match(liteContractSource, /data\/lite\/projects\/<id>/);
 assert.match(liteContractSource, /must not create a duplicate `export\.json`/);
 assert.doesNotMatch(liteContractSource, /no audio/);
 assert.doesNotMatch(liteImportFramesSource, /parseCanvas/);
@@ -806,6 +1101,7 @@ assert.deepEqual(detectExportPackage(["audio/hit.wav"]).audioFiles, ["audio/hit.
 assert.equal(detectExportPackage(["spritesheet.png", "spritesheet.json"], { rootName: "idle1" }).animations[0].animationId, "idle1");
 assert.equal(detectExportPackage(["attack/export.json", "attack/frame_0001.png"]).animations[0].kind, "sequence");
 assert.equal(isLiteBakedMeta({ meta: { app: "XSXB Frame Tuner Lite", canvas: { width: 8 } } }), true);
+assert.equal(isLiteBakedMeta({ meta: { app: "FrameDock Lite", canvas: { width: 8 } } }), true);
 assert.equal(isLiteBakedMeta({ frames: {} }), false);
 assert.ok(audioLookupKeys("../audio/hit.wav").includes("audio/hit.wav"));
 
@@ -1753,7 +2049,7 @@ try {
   assert.match(unityImporterSource, /XSXB_RUNTIME_REBUILD_OK/);
   assert.match(unityImporterSource, /player\.HotReloadDatabase\(\)/);
   assert.match(unityImporterSource, /referencePaths\.Contains\(audioPath\)/);
-  assert.match(unityImporterSource, /references are maintained by the Frame Tuner sync/);
+  assert.match(unityImporterSource, /references are maintained by the FrameDock sync/);
   assert.match(unityImporterSource, /audioClips=/);
   assert.match(unityImporterSource, /EditorApplication\.update \+= PollSyncSignals/);
   assert.match(unityImporterSource, /xsxb_sync_signal\.json/);
@@ -1779,6 +2075,43 @@ try {
   assert.equal(directRuntime.profiles[0].sourceFacesLeft, true);
 } finally {
   fs.rmSync(unitySyncTestRoot, { recursive: true, force: true });
+}
+
+const fsBrowserRoot = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-fs-browser-"));
+try {
+  fs.writeFileSync(path.join(fsBrowserRoot, "project.godot"), "; godot\n");
+  assert.equal(detectEngine(fsBrowserRoot), "godot");
+  const unityRoot = path.join(fsBrowserRoot, "unity_game");
+  fs.mkdirSync(path.join(unityRoot, "Assets"), { recursive: true });
+  fs.mkdirSync(path.join(unityRoot, "ProjectSettings"), { recursive: true });
+  assert.equal(detectEngine(unityRoot), "unity");
+  const listed = listDirectory(fsBrowserRoot);
+  assert.equal(listed.engine, "godot");
+  assert.ok(listed.entries.some((entry) => entry.name === "unity_game"));
+  const liteFolder = path.join(fsBrowserRoot, "lite_pack");
+  fs.mkdirSync(liteFolder);
+  fs.writeFileSync(path.join(liteFolder, "animation_manifest.json"), "{}\n");
+  assert.equal(isLiteProjectDir(liteFolder), true);
+} finally {
+  fs.rmSync(fsBrowserRoot, { recursive: true, force: true });
+}
+
+const liteDiscoverRoot = fs.mkdtempSync(path.join(os.tmpdir(), "xsxb-lite-discover-"));
+try {
+  const liteStore = createLiteStore(liteDiscoverRoot);
+  const orphan = path.join(liteDiscoverRoot, "data", "lite", "projects", "found_me");
+  fs.mkdirSync(orphan, { recursive: true });
+  fs.writeFileSync(path.join(orphan, "animation_manifest.json"), JSON.stringify({ schemaVersion: 1, profiles: [] }));
+  const discovered = liteStore.discoverProjects();
+  assert.ok(discovered.projects.some((project) => project.id === "found_me"));
+  const created = liteStore.ensureProject("brand_new", "Brand New");
+  assert.equal(created.id, "brand_new");
+  assert.ok(fs.existsSync(path.join(liteDiscoverRoot, "data", "lite", "projects", "brand_new", "animation_manifest.json")));
+  const registered = liteStore.registerProjectFromFolder(orphan);
+  assert.equal(registered.activeProjectId, "found_me");
+  assert.throws(() => liteStore.registerProjectFromFolder(os.tmpdir()), /Lite/);
+} finally {
+  fs.rmSync(liteDiscoverRoot, { recursive: true, force: true });
 }
 
 console.log("XSXB self-tests passed.");

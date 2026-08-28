@@ -141,6 +141,49 @@ function createLiteStore(root) {
     return writeRegistry(registry);
   }
 
+  function discoverProjects() {
+    const registry = readRegistry();
+    const known = new Set(registry.projects.map((project) => project.id));
+    const dir = path.join(root, "data", "lite", "projects");
+    if (!fs.existsSync(dir)) return writeRegistry(registry);
+    for (const name of fs.readdirSync(dir)) {
+      const folder = path.join(dir, name);
+      try {
+        if (!fs.statSync(folder).isDirectory()) continue;
+      } catch {
+        continue;
+      }
+      if (!fs.existsSync(path.join(folder, "animation_manifest.json"))) continue;
+      const id = slug(name, "");
+      if (!id || known.has(id)) continue;
+      registry.projects.push(normalizeProject({ id, label: name }));
+      known.add(id);
+    }
+    if (!registry.activeProjectId && registry.projects[0]) registry.activeProjectId = registry.projects[0].id;
+    return writeRegistry(registry);
+  }
+
+  function registerProjectFromFolder(folder) {
+    const target = path.resolve(String(folder || ""));
+    const projectsRoot = path.join(root, "data", "lite", "projects");
+    let id = "";
+    if (path.resolve(target) === path.resolve(path.join(root, "data", "lite")) || path.resolve(target) === path.resolve(root)) {
+      return discoverProjects();
+    }
+    if (fs.existsSync(path.join(target, "animation_manifest.json"))) {
+      id = slug(path.basename(target), "");
+      const expected = path.join(projectsRoot, id);
+      if (path.resolve(target) !== path.resolve(expected) && path.resolve(path.dirname(target)) !== path.resolve(projectsRoot)) {
+        throw new Error("只能打开当前 Lite 根目录下 data/lite/projects/<id> 里的素材项目。");
+      }
+    } else if (path.resolve(path.dirname(target)) === path.resolve(projectsRoot)) {
+      id = slug(path.basename(target), "");
+    }
+    if (!id) throw new Error("请选择 Lite 的 data/lite/projects 下的素材项目文件夹。");
+    ensureProject(id, id);
+    return readRegistry();
+  }
+
   function projectForClient(project) {
     const target = paths(project);
     return {
@@ -156,9 +199,11 @@ function createLiteStore(root) {
   }
 
   return {
+    discoverProjects,
     ensureProject,
     ensureProjectFiles,
     path: registryPath,
+    registerProjectFromFolder,
     paths,
     projectForClient,
     projectWorkspaceDir: (project) => paths(project).workspaceDir,

@@ -29,7 +29,7 @@
   function isLiteBakedMeta(source) {
     const meta = source?.meta && typeof source.meta === "object" ? source.meta : source;
     return Boolean(meta)
-      && (meta.baked === true || String(meta.app || "").includes("XSXB Frame Tuner Lite"));
+      && (meta.baked === true || /(?:FrameDock Lite|XSXB Frame Tuner Lite)/.test(String(meta.app || "")));
   }
 
   function audioLookupKeys(relative) {

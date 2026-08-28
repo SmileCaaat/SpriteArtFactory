@@ -5,6 +5,8 @@ const els = {
   updateButton: document.querySelector("#updateButton"),
   projectSelect: document.querySelector("#projectSelect"),
   projectBinding: document.querySelector("#projectBinding"),
+  openProject: document.querySelector("#openProject"),
+  newLiteProject: document.querySelector("#newLiteProject"),
   addCodexPet: document.querySelector("#addCodexPet"),
   refreshProject: document.querySelector("#refreshProject"),
   languageSelect: document.querySelector("#languageSelect"),
@@ -17,17 +19,46 @@ const els = {
   groupFieldLabel: document.querySelector("#groupFieldLabel"),
   groupFamilyBadge: document.querySelector("#groupFamilyBadge"),
   groupSearch: document.querySelector("#groupSearch"),
+  compositeActions: document.querySelector("#compositeActions"),
+  createCompositeFromCurrent: document.querySelector("#createCompositeFromCurrent"),
+  createCompositeEmpty: document.querySelector("#createCompositeEmpty"),
+  compositeAddClipField: document.querySelector("#compositeAddClipField"),
+  compositeAddClipSelect: document.querySelector("#compositeAddClipSelect"),
+  compositeImportInput: document.querySelector("#compositeImportInput"),
   sceneSelect: document.querySelector("#sceneSelect"),
   sceneScale: document.querySelector("#sceneScale"),
   characterBaseScale: document.querySelector("#characterBaseScale"),
   characterBaseSource: document.querySelector("#characterBaseSource"),
   canvasTitle: document.querySelector("#canvasTitle"),
+  editorModeButtons: Array.from(document.querySelectorAll("[data-editor-mode]")),
   selectionHud: document.querySelector("#selectionHud"),
   coordHud: document.querySelector("#coordHud"),
   stage: document.querySelector("#stage"),
+  workspace: document.querySelector(".workspace"),
+  splitToolbar: document.querySelector("#splitToolbar"),
+  splitFilmstrip: document.querySelector("#splitFilmstrip"),
   filmstrip: document.querySelector("#filmstrip"),
   importAttachmentsButton: document.querySelector("#importAttachmentsButton"),
   importAttachmentsInput: document.querySelector("#importAttachmentsInput"),
+  photopeaEdit: document.querySelector("#photopeaEdit"),
+  photopeaDialog: document.querySelector("#photopeaDialog"),
+  photopeaFrame: document.querySelector("#photopeaFrame"),
+  photopeaCancel: document.querySelector("#photopeaCancel"),
+  photopeaWriteBack: document.querySelector("#photopeaWriteBack"),
+  contextMenu: document.querySelector("#contextMenu"),
+  folderBrowserDialog: document.querySelector("#folderBrowserDialog"),
+  folderBrowserForm: document.querySelector("#folderBrowserForm"),
+  folderBrowserHint: document.querySelector("#folderBrowserHint"),
+  folderBrowserPath: document.querySelector("#folderBrowserPath"),
+  folderBrowserUp: document.querySelector("#folderBrowserUp"),
+  folderBrowserMeta: document.querySelector("#folderBrowserMeta"),
+  folderBrowserList: document.querySelector("#folderBrowserList"),
+  folderBrowserCancel: document.querySelector("#folderBrowserCancel"),
+  toolSelect: document.querySelector("#toolSelect"),
+  toolMove: document.querySelector("#toolMove"),
+  toolRotate: document.querySelector("#toolRotate"),
+  toolScale: document.querySelector("#toolScale"),
+  toolPivot: document.querySelector("#toolPivot"),
   baseScale: document.querySelector("#baseScale"),
   baseScaleX: document.querySelector("#baseScaleX"),
   baseScaleY: document.querySelector("#baseScaleY"),
@@ -76,6 +107,7 @@ const els = {
   ghostToggle: document.querySelector("#ghostToggle"),
   applyBaseToFrame: document.querySelector("#applyBaseToFrame"),
   rebaseGroupOrigin: document.querySelector("#rebaseGroupOrigin"),
+  alignTransformPivot: document.querySelector("#alignTransformPivot"),
   undo: document.querySelector("#undo"),
   undoTop: document.querySelector("#undoTop"),
   redoTop: document.querySelector("#redoTop"),
@@ -87,7 +119,7 @@ const els = {
   resetView: document.querySelector("#resetView"),
 };
 
-const ctx = els.stage.getContext("2d");
+let ctx = els.stage.getContext("2d");
 const FRAME_DURATION_STEP_MS = 10;
 const MIN_FRAME_DURATION_MS = 1;
 const BOX_PREF_KEYS = {
@@ -97,6 +129,11 @@ const BOX_PREF_KEYS = {
   checked: "xsxbFrameTuner.checkedBoxes",
 };
 const ADJUSTMENT_MODE_KEY = "xsxbFrameTuner.adjustmentMode";
+const TOOL_MODE_KEY = "xsxbFrameTuner.toolMode";
+const TOOLBAR_WIDTH_KEY = "xsxbFrameTuner.toolbarWidth";
+const FILMSTRIP_HEIGHT_KEY = "xsxbFrameTuner.filmstripHeight";
+const TOOL_MODES = ["select", "move", "rotate", "scale", "pivot"];
+const EDITOR_MODES = ["transform", "boxes", "trails"];
 const ADJUSTMENT_MODES = ["character", "group", "frame"];
 const BOX_NAMES = ["hurtbox", "hitbox", "collisionbox"];
 const BOX_DRAW_ORDER = ["collisionbox", "hurtbox", "hitbox"];
@@ -104,7 +141,12 @@ const COLLISION_BOX_HANDLES = new Set(["nw", "n", "ne", "w", "e"]);
 const I18N = {
   zh: {
     allCharacters: "全部角色",
-    adjustmentBase: "调整 Base",
+    adjustmentBase: "变换",
+    editorModeTransform: "变换",
+    editorModeBoxes: "碰撞框",
+    editorModeTrails: "拖尾",
+    outlinerPane: "大纲",
+    detailsPane: "细节",
     boundFrameSfx: "已绑定帧音效：{name}\n已保存到项目",
     boxEnabled: "这一帧启用碰撞框",
     boxOnlyMode: "仅编辑碰撞框",
@@ -150,7 +192,7 @@ const I18N = {
     frameAttachmentLayerBelow: "附加图在角色下方",
     frameAttachmentRemove: "删除附加图",
     frameAttachmentRemoved: "已删除附加图",
-    frameAttachmentCanvasHint: "附加帧优先：拖动图片移动，R+滚轮旋转，Z+滚轮缩放；无附加帧时 R/Z 作用于当前 Base；拖卡片到缝隙调层级",
+    frameAttachmentCanvasHint: "Q 选择，W 移动，E 旋转，R 缩放；拖卡片到缝隙调层级",
     frameAttachmentTrailLocked: "拖尾编辑中：附加图层已锁定",
     frameAttachmentUploadFailed: "附加图导入失败：{message}",
     frameAttachmentCopied: "已复制附加图：{count}",
@@ -180,12 +222,16 @@ const I18N = {
     rebaseGroupOrigin: "原点归 0（保持画面）",
     rebaseGroupOriginDone: "组原点已归 0，画面位置保持不变。",
     rebaseGroupOriginAlreadyZero: "组原点已在 0,0。",
+    alignTransformPivot: "变换枢轴对齐",
+    alignTransformPivotNeedRebase: "请先把组原点归 0，再对齐变换枢轴。",
+    alignTransformPivotDone: "组变换枢轴已对齐到原点 0,0。画面位置保持不变。",
+    alignTransformPivotAlready: "变换枢轴已在原点 0,0。",
     groupFps: "组 FPS",
     groupTimeConflict: "当前已经调过单帧时间。确认后会从当前总时长开始切换到组时间，并清除单帧时间设置。",
     groupTimeMs: "组时长",
     groupSearchPlaceholder: "名称、类型、来源",
     height: "高",
-    hint: "拖动画布可平移。R+滚轮旋转、Z+滚轮缩放：有附加帧（悬停/选中）时调附加帧，否则调当前 Base。框默认拖整体；按住 Alt 只拖节点塑形。",
+    hint: "中键平移画布。Q 可框选序列帧，W 拖动选中项。左键按 Q/W/E/R 操作，O 调整变换枢轴。右键打开菜单。Ctrl+Z 撤销，Ctrl+Y 重做，Ctrl+C/V 复制粘贴，Delete 删除。",
     hitbox: "攻击框",
     hurtbox: "受击框",
     collisionbox: "碰撞体",
@@ -212,6 +258,71 @@ const I18N = {
     playable: "{count} 可播放",
     playback: "播放",
     preloadedFrames: "已预载 {count} 帧\n{root}",
+    openProject: "打开项目",
+    newLiteProject: "新建项目",
+    newLiteProjectPrompt: "新素材项目名称",
+    openProjectHint: "选择 Godot 或 Unity 工程根目录。",
+    openLiteProjectHint: "选择当前 Lite 根目录下 data/lite/projects 里的素材项目文件夹。",
+    folderPath: "路径",
+    folderUp: "上级",
+    openSelectedFolder: "打开此文件夹",
+    cancel: "取消",
+    folderEngineGodot: "Godot 工程",
+    folderEngineUnity: "Unity 工程",
+    folderLiteProject: "Lite 素材项目",
+    projectOpened: "已打开项目：{name}",
+    projectCreated: "已新建项目：{name}",
+    photopeaEdit: "Photopea",
+    photopeaHint: "主帧和附加层按当前编辑器构图对齐。写回只改源像素，Tuner 变换不会再叠一次。写回后可用 Ctrl+Z 撤回。",
+    photopeaWriteBack: "写回 Tuner",
+    photopeaWriting: "正在把 Photopea 图层写回…",
+    menuUndo: "撤销",
+    menuRedo: "重做",
+    menuCopy: "复制",
+    menuPaste: "粘贴",
+    menuDuplicate: "复制帧到右侧",
+    menuDelete: "删除",
+    menuInsertBlank: "插入空白帧",
+    menuPhotopea: "Photopea 编辑本帧",
+    frameCopied: "已复制第 {index} 帧",
+    framePasted: "已粘贴帧",
+    photopeaUnavailable: "Photopea 无法加载。请检查网络后重试。",
+    photopeaNoFrame: "请先选择一帧再打开 Photopea。",
+    photopeaCroppedBlocked: "图集裁切帧不能直接送进 Photopea，请先导出独立 PNG。",
+    photopeaPetsBlocked: "Codex 宠物图集不能用 Photopea 写回。",
+    photopeaWritten: "已把 Photopea 图层写回本帧，可用 Ctrl+Z 撤回。",
+    photopeaFailed: "Photopea 编辑失败：{message}",
+    toolSelect: "选择 Q",
+    toolMove: "移动 W",
+    toolRotate: "旋转 E",
+    toolScale: "缩放 R",
+    toolPivot: "枢轴 O",
+    createCompositeFromCurrent: "基于此素材新建组合序列",
+    createCompositeEmpty: "新建组合序列",
+    addClipToTimeline: "加入时间线",
+    compositeSelectClip: "选择序列（可跨素材集）",
+    compositeCreated: "已新建组合序列 {name}",
+    compositeClipAdded: "已把 {name} 加入时间线",
+    compositeNeedProfile: "请先选择一个素材集或序列。",
+    compositeNeedSource: "请先选择一条普通序列。",
+    compositeNestedBlocked: "组合序列不能再嵌套组合。",
+    compositeDropHint: "把 PNG 文件夹或其它序列拖到画布/时间线上，会建成 clip。",
+    compositeEmptyTimeline: "空时间线。用「加入时间线」或拖入 PNG / 已有序列。",
+    compositeMarqueeHint: "直接拖素材改时间；拖两端裁切；滚轮缩放。S 分割，Ctrl+C/V 复制粘贴，磁铁吸附。",
+    compositePetsHidden: "Codex Pets 不支持组合序列。",
+    compositeCopyClips: "已复制 {count} 条时间线素材",
+    compositePasteClips: "已粘贴 {count} 条时间线素材",
+    compositeDuplicateClips: "复制一份",
+    compositeHideTrack: "隐藏此轨道",
+    compositeShowTrack: "显示此轨道",
+    compositeHideSelected: "隐藏选中素材",
+    compositeShowSelected: "显示选中素材",
+    compositeReorderTrack: "拖动调整前后：越靠下越靠前",
+    compositeSplit: "分割",
+    compositeSnap: "磁铁吸附",
+    compositeNewTrack: "新图层",
+    compositeSplitDone: "已在播放头处分割 {count} 条素材",
+    deleteCompositeClip: "删除选中 clip",
     project: "项目",
     pet: "宠物",
     state: "状态",
@@ -277,7 +388,12 @@ const I18N = {
   },
   en: {
     allCharacters: "All characters",
-    adjustmentBase: "Adjust Base",
+    adjustmentBase: "Transform",
+    editorModeTransform: "Transform",
+    editorModeBoxes: "Boxes",
+    editorModeTrails: "Trails",
+    outlinerPane: "Outliner",
+    detailsPane: "Details",
     boundFrameSfx: "Bound frame SFX: {name}\nSaved to project",
     boxEnabled: "Box enabled on this frame",
     boxOnlyMode: "Box edit only",
@@ -323,7 +439,7 @@ const I18N = {
     frameAttachmentLayerBelow: "Attached image below character",
     frameAttachmentRemove: "Delete attached image",
     frameAttachmentRemoved: "Attached image deleted",
-    frameAttachmentCanvasHint: "Attachments first: drag image, R/Z+wheel; else R/Z adjusts Base. Drag cards into gaps",
+    frameAttachmentCanvasHint: "Q select, W move, E rotate, R scale; drag cards into gaps to reorder layers",
     frameAttachmentTrailLocked: "Trail editing: attached layers are locked",
     frameAttachmentUploadFailed: "Attached image import failed: {message}",
     frameAttachmentCopied: "Copied attached images: {count}",
@@ -353,12 +469,16 @@ const I18N = {
     rebaseGroupOrigin: "Rebase origin to 0,0",
     rebaseGroupOriginDone: "Group origin reset to 0,0; visuals unchanged.",
     rebaseGroupOriginAlreadyZero: "Group origin is already at 0,0.",
+    alignTransformPivot: "Align transform pivot",
+    alignTransformPivotNeedRebase: "Rebase the group origin to 0,0 before aligning the transform pivot.",
+    alignTransformPivotDone: "Group transform pivot aligned to origin 0,0. Visuals unchanged.",
+    alignTransformPivotAlready: "Transform pivot is already at origin 0,0.",
     groupFps: "Group FPS",
     groupTimeConflict: "Frame timing has already been adjusted. Confirm to switch from the current total duration to group timing and clear frame duration overrides.",
     groupTimeMs: "Group duration",
     groupSearchPlaceholder: "Name, type, source",
     height: "Height",
-    hint: "Drag pans. R/Z+wheel: attachments when hovered/selected, otherwise current Base. Boxes drag as a whole; hold Alt to drag handles only.",
+    hint: "Middle-drag pans. Q marquee-selects sequence frames; W moves the selection. Left-click uses Q/W/E/R; O moves the transform pivot. Right-click opens the menu. Ctrl+Z undo, Ctrl+Y redo, Ctrl+C/V copy/paste, Delete removes.",
     hitbox: "Hitbox",
     hurtbox: "Hurtbox",
     collisionbox: "Collision",
@@ -385,6 +505,71 @@ const I18N = {
     playable: "{count} playable",
     playback: "Playback",
     preloadedFrames: "Preloaded {count} frames\n{root}",
+    openProject: "Open project",
+    newLiteProject: "New project",
+    newLiteProjectPrompt: "New material set name",
+    openProjectHint: "Choose a Godot or Unity project root.",
+    openLiteProjectHint: "Choose a material project folder under this Lite root's data/lite/projects.",
+    folderPath: "Path",
+    folderUp: "Up",
+    openSelectedFolder: "Open this folder",
+    cancel: "Cancel",
+    folderEngineGodot: "Godot project",
+    folderEngineUnity: "Unity project",
+    folderLiteProject: "Lite material project",
+    projectOpened: "Opened project: {name}",
+    projectCreated: "Created project: {name}",
+    photopeaEdit: "Photopea",
+    photopeaHint: "Owner and attachments match the current editor composite. Pixel writeback does not stack Tuner transforms. Ctrl+Z undoes writeback.",
+    photopeaWriteBack: "Write back to Tuner",
+    photopeaWriting: "Writing Photopea layers back…",
+    menuUndo: "Undo",
+    menuRedo: "Redo",
+    menuCopy: "Copy",
+    menuPaste: "Paste",
+    menuDuplicate: "Duplicate frame",
+    menuDelete: "Delete",
+    menuInsertBlank: "Insert blank frame",
+    menuPhotopea: "Edit frame in Photopea",
+    frameCopied: "Copied frame {index}",
+    framePasted: "Pasted frame",
+    photopeaUnavailable: "Photopea could not load. Check the network and retry.",
+    photopeaNoFrame: "Select a frame before opening Photopea.",
+    photopeaCroppedBlocked: "Atlas crop frames cannot go to Photopea; export standalone PNGs first.",
+    photopeaPetsBlocked: "Codex pet atlases cannot be written back from Photopea.",
+    photopeaWritten: "Wrote Photopea layers back to this frame. Ctrl+Z undoes the pixels.",
+    photopeaFailed: "Photopea edit failed: {message}",
+    toolSelect: "Select Q",
+    toolMove: "Move W",
+    toolRotate: "Rotate E",
+    toolScale: "Scale R",
+    toolPivot: "Pivot O",
+    createCompositeFromCurrent: "New composite from this sequence",
+    createCompositeEmpty: "New composite sequence",
+    addClipToTimeline: "Add to timeline",
+    compositeSelectClip: "Choose a sequence from any set",
+    compositeCreated: "Created composite {name}",
+    compositeClipAdded: "Added {name} to the timeline",
+    compositeNeedProfile: "Select a material set or sequence first.",
+    compositeNeedSource: "Select a regular sequence first.",
+    compositeNestedBlocked: "A composite cannot nest another composite.",
+    compositeDropHint: "Drop a PNG folder or existing sequence onto the canvas or timeline to make a clip.",
+    compositeEmptyTimeline: "Empty timeline. Add a sequence or drop PNGs.",
+    compositeMarqueeHint: "Drag clips to retime. Drag ends to trim. Wheel zooms. S splits. Ctrl+C/V copy/paste. Magnet snaps.",
+    compositePetsHidden: "Codex Pets does not support composite sequences.",
+    compositeCopyClips: "Copied {count} timeline clips",
+    compositePasteClips: "Pasted {count} timeline clips",
+    compositeDuplicateClips: "Duplicate",
+    compositeHideTrack: "Hide this track",
+    compositeShowTrack: "Show this track",
+    compositeHideSelected: "Hide selected clips",
+    compositeShowSelected: "Show selected clips",
+    compositeReorderTrack: "Drag to reorder. Lower tracks draw in front.",
+    compositeSplit: "Split",
+    compositeSnap: "Magnetic snap",
+    compositeNewTrack: "New layer",
+    compositeSplitDone: "Split {count} clip(s) at the playhead",
+    deleteCompositeClip: "Delete selected clips",
     project: "Project",
     pet: "Pet",
     state: "State",
@@ -490,6 +675,13 @@ let previewOwnerImages = [];
 let coordinateOwnerGroup = null;
 let coordinateOwnerImages = [];
 let attachedLayerImageSets = new Map();
+let compositeSourceImages = new Map();
+let compositePlayheadMs = 0;
+let compositeTimelineView = null;
+let selectedClipIds = new Set();
+let compositeMarqueeRect = null;
+let marqueePreviewClipIds = new Set();
+let skipNextFilmstripClick = false;
 let frameImageAttachments = [];
 let selectedAttachmentId = "";
 let frameImageAttachmentClipboard = [];
@@ -506,6 +698,16 @@ let playbackSecondaryGroup = null;
 let playbackSwitching = false;
 let view = { zoom: 1, x: 0, y: 0 };
 let drag = null;
+let toolMode = TOOL_MODES.includes(localStorage.getItem(TOOL_MODE_KEY))
+  ? localStorage.getItem(TOOL_MODE_KEY)
+  : "move";
+let editorMode = EDITOR_MODES.includes(localStorage.getItem("xsxbFrameTuner.editorMode"))
+  ? localStorage.getItem("xsxbFrameTuner.editorMode")
+  : "transform";
+let photopeaSession = null;
+let photopeaLayers = [];
+let folderBrowserMode = "full";
+let editorClipboard = { kind: "", frameIndex: -1, groupUiId: "", projectId: "" };
 let undoStack = [];
 let redoStack = [];
 const UNDO_COALESCE_WINDOW_MS = 650;
@@ -773,10 +975,12 @@ function saveBoxViewPrefs() {
   localStorage.setItem(BOX_PREF_KEYS.checked, selectedBoxNames().join(","));
 }
 
-function status(text) {
+function status(text, options = {}) {
   if (!els.status) return;
   els.status.textContent = text;
   els.status.hidden = !text;
+  if (options.sticky) els.status.dataset.sticky = "1";
+  else delete els.status.dataset.sticky;
 }
 
 function loadedStatusText() {
@@ -1217,6 +1421,988 @@ function canDirectManipulateSelectedAttachment() {
   return Boolean(directManipulationAttachment());
 }
 
+function toolModeButtons() {
+  return [els.toolSelect, els.toolMove, els.toolRotate, els.toolScale, els.toolPivot].filter(Boolean);
+}
+
+function setToolMode(mode) {
+  const next = TOOL_MODES.includes(mode) ? mode : "select";
+  toolMode = next;
+  localStorage.setItem(TOOL_MODE_KEY, next);
+  for (const button of toolModeButtons()) {
+    button.classList.toggle("active", button.dataset.toolMode === next);
+  }
+  draw();
+}
+
+function setEditorMode(mode, options = {}) {
+  const pets = config?.projectKind === "codex_pets";
+  let next = EDITOR_MODES.includes(mode) ? mode : "transform";
+  if (pets && next !== "transform") next = "transform";
+  const previous = editorMode;
+  editorMode = next;
+  localStorage.setItem("xsxbFrameTuner.editorMode", next);
+  document.body.dataset.editorMode = next;
+  for (const button of els.editorModeButtons || []) {
+    button.classList.toggle("active", button.dataset.editorMode === next);
+    if (pets && button.dataset.editorMode !== "transform") button.hidden = true;
+    else button.hidden = false;
+  }
+  if (next === "boxes") {
+    showBoxes = true;
+    if (els.showBoxes) els.showBoxes.checked = true;
+    saveBoxViewPrefs();
+    const panel = document.querySelector('[data-panel="boxes"]');
+    if (panel) panel.open = true;
+  }
+  if (next === "trails" && attackTrailEditor && !pets) {
+    attackTrailEditor.enabled = true;
+    if (!attackTrailEditor.workspaceMode) attackTrailEditor.workspaceMode = "draw";
+    const panel = document.querySelector("#attackTrailPanel");
+    if (panel) {
+      panel.hidden = false;
+      panel.open = true;
+    }
+    attackTrailEditor.render();
+  }
+  if (previous === "trails" && next !== "trails" && attackTrailEditor) {
+    attackTrailEditor.workspaceMode = "";
+    attackTrailEditor.render();
+  }
+  if (!options.silent) draw();
+}
+
+function clearFrameAttachmentSelection() {
+  if (!selectedAttachmentId) return;
+  selectedAttachmentId = "";
+  syncAdjustmentInputs();
+  renderFilmstrip();
+  draw();
+}
+
+function hitTestOwnerSprite(event) {
+  if (!currentGroup || !images[selectedFrame]) return false;
+  const rect = frameScreenRect(selectedFrame, currentGroup, images);
+  if (!rect) return false;
+  const point = stagePoint(event);
+  return point.x >= rect.x && point.x <= rect.x + rect.width && point.y >= rect.y && point.y <= rect.y + rect.height;
+}
+
+function groupTransformPivotKey(group = currentGroup) {
+  return `${tuningAnimationName(group)}:transform_pivot`;
+}
+
+function authoredTransformPivot(group = currentGroup) {
+  if (!group) return null;
+  const value = valueStore(group)[groupTransformPivotKey(group)];
+  if (!value || typeof value !== "object") return null;
+  return { x: Number(value.x || 0), y: Number(value.y || 0) };
+}
+
+function setAuthoredTransformPivot(pivot, group = currentGroup) {
+  if (!group) return;
+  valueStore(group)[groupTransformPivotKey(group)] = {
+    x: Number(pivot?.x || 0),
+    y: Number(pivot?.y || 0),
+  };
+}
+
+function groupOriginIsZero(group = currentGroup) {
+  if (!group) return false;
+  return offsetsNearlyEqual(baseTransform(group).offset, { x: 0, y: 0 });
+}
+
+function groupPivotLocalToScreen(local, group = currentGroup) {
+  const origin = groupOriginScreen(selectedFrame, group, images, false);
+  const worldScale = view.zoom * devicePixelRatio;
+  const runtime = Math.max(0.0001, runtimeBaseScaleForGroup(selectedFrame, group, images));
+  const facing = effectiveFlipH(group) ? -1 : 1;
+  return {
+    x: origin.x + Number(local?.x || 0) * runtime * worldScale * facing,
+    y: origin.y + Number(local?.y || 0) * runtime * worldScale,
+  };
+}
+
+function groupPivotLocalFromScreen(point, group = currentGroup) {
+  const origin = groupOriginScreen(selectedFrame, group, images, false);
+  const worldScale = Math.max(0.0001, view.zoom * devicePixelRatio);
+  const runtime = Math.max(0.0001, runtimeBaseScaleForGroup(selectedFrame, group, images));
+  const facing = effectiveFlipH(group) ? -1 : 1;
+  return {
+    x: (point.x - origin.x) / (runtime * worldScale * facing),
+    y: (point.y - origin.y) / (runtime * worldScale),
+  };
+}
+
+function offsetDeltaFromCanvasDelta(dx, dy, group = currentGroup) {
+  const worldScale = Math.max(0.0001, view.zoom * devicePixelRatio);
+  const runtime = Math.max(0.0001, runtimeBaseScaleForGroup(selectedFrame, group, images));
+  const facing = effectiveFlipH(group) ? -1 : 1;
+  return {
+    x: dx / (runtime * worldScale * facing),
+    y: dy / (runtime * worldScale),
+  };
+}
+
+function usesGroupTransformPivot() {
+  if (toolMode === "pivot") return true;
+  return Boolean(authoredTransformPivot()) && !selectedFrameAttachment();
+}
+
+function gizmoOwnerRect() {
+  if (isCompositeGroup()) {
+    const sampled = activeCompositeSamples().find((entry) => selectedClipIds.has(entry.clip.id));
+    return sampled ? clipScreenRect(sampled) : null;
+  }
+  if (!currentGroup || !images[selectedFrame]) return null;
+  return frameScreenRect(selectedFrame, currentGroup, images);
+}
+
+function gizmoTargetRect() {
+  if (toolMode === "pivot") return gizmoOwnerRect();
+  const attachment = selectedFrameAttachment();
+  if (attachment && !frameAttachmentEditingLocked()) {
+    return frameImageAttachmentScreenRect(attachment, attachmentFrameIndex(attachment, currentGroup), currentGroup, images);
+  }
+  return gizmoOwnerRect();
+}
+
+function gizmoLayout(rect = gizmoTargetRect()) {
+  if (!rect) return null;
+  let originX = Number(rect.originX ?? rect.x + rect.width / 2);
+  let originY = Number(rect.originY ?? rect.y + rect.height / 2);
+  if (usesGroupTransformPivot() && authoredTransformPivot()) {
+    const screen = groupPivotLocalToScreen(authoredTransformPivot());
+    originX = screen.x;
+    originY = screen.y;
+  }
+  const arm = Math.max(48, Math.min(96, Math.max(rect.width, rect.height) * 0.35));
+  return {
+    originX,
+    originY,
+    arm,
+    handle: 10 * devicePixelRatio,
+    spriteOriginX: Number(rect.originX ?? originX),
+    spriteOriginY: Number(rect.originY ?? originY),
+  };
+}
+
+function hitTestTransformGizmo(event) {
+  if (attackTrailEditor?.isEditingWorkspace?.()) return null;
+  const layout = gizmoLayout();
+  if (!layout) return null;
+  const point = stagePoint(event);
+  const dx = point.x - layout.originX;
+  const dy = point.y - layout.originY;
+  const handle = layout.handle;
+  if (toolMode === "pivot") {
+    if (Math.hypot(dx, dy) <= handle * 2.2) return "pivot";
+    return null;
+  }
+  if (toolMode === "select") return null;
+  if (toolMode === "move") {
+    if (Math.hypot(dx, dy) <= handle * 1.4) return "center";
+    if (Math.abs(dy) <= handle && dx > handle && dx <= layout.arm + handle) return "x";
+    if (Math.abs(dx) <= handle && dy < -handle && dy >= -layout.arm - handle) return "y";
+    return null;
+  }
+  if (toolMode === "rotate") {
+    const radius = Math.hypot(dx, dy);
+    if (Math.abs(radius - layout.arm) <= handle * 1.6) return "rotate";
+    return null;
+  }
+  if (toolMode === "scale") {
+    if (Math.hypot(dx, dy) <= handle * 1.4) return "uniform";
+    if (Math.abs(dy) <= handle && Math.abs(dx - layout.arm) <= handle) return "x";
+    if (Math.abs(dx) <= handle && Math.abs(dy + layout.arm) <= handle) return "y";
+  }
+  return null;
+}
+
+function drawTransformGizmo() {
+  if (attackTrailEditor?.isEditingWorkspace?.()) return;
+  const layout = gizmoLayout();
+  if (!layout) return;
+  ctx.save();
+  ctx.lineWidth = 2 * devicePixelRatio;
+  ctx.lineCap = "round";
+  if (toolMode === "pivot") {
+    const owner = gizmoOwnerRect();
+    if (owner && (Math.abs(owner.originX - layout.originX) > 1 || Math.abs(owner.originY - layout.originY) > 1)) {
+      ctx.strokeStyle = "rgba(241, 196, 15, .45)";
+      ctx.setLineDash([6 * devicePixelRatio, 4 * devicePixelRatio]);
+      ctx.beginPath();
+      ctx.moveTo(owner.originX, owner.originY);
+      ctx.lineTo(layout.originX, layout.originY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = "rgba(241, 196, 15, .35)";
+      ctx.fillRect(owner.originX - layout.handle / 3, owner.originY - layout.handle / 3, layout.handle * 0.66, layout.handle * 0.66);
+    }
+    ctx.strokeStyle = "#f1c40f";
+    ctx.beginPath();
+    ctx.arc(layout.originX, layout.originY, layout.handle * 1.15, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(layout.originX - layout.handle * 1.8, layout.originY);
+    ctx.lineTo(layout.originX + layout.handle * 1.8, layout.originY);
+    ctx.moveTo(layout.originX, layout.originY - layout.handle * 1.8);
+    ctx.lineTo(layout.originX, layout.originY + layout.handle * 1.8);
+    ctx.stroke();
+    ctx.fillStyle = "#f1c40f";
+    ctx.beginPath();
+    ctx.arc(layout.originX, layout.originY, layout.handle * 0.35, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
+  if (toolMode === "select") {
+    ctx.restore();
+    return;
+  }
+  if (toolMode === "move" || toolMode === "scale") {
+    ctx.strokeStyle = "#e74c3c";
+    ctx.beginPath();
+    ctx.moveTo(layout.originX, layout.originY);
+    ctx.lineTo(layout.originX + layout.arm, layout.originY);
+    ctx.stroke();
+    ctx.strokeStyle = "#2ecc71";
+    ctx.beginPath();
+    ctx.moveTo(layout.originX, layout.originY);
+    ctx.lineTo(layout.originX, layout.originY - layout.arm);
+    ctx.stroke();
+  }
+  if (toolMode === "rotate") {
+    ctx.strokeStyle = "rgba(52, 152, 219, .95)";
+    ctx.beginPath();
+    ctx.arc(layout.originX, layout.originY, layout.arm, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.fillStyle = "#f1c40f";
+  ctx.fillRect(layout.originX - layout.handle / 2, layout.originY - layout.handle / 2, layout.handle, layout.handle);
+  if (toolMode === "scale") {
+    ctx.fillStyle = "#e74c3c";
+    ctx.fillRect(layout.originX + layout.arm - layout.handle / 2, layout.originY - layout.handle / 2, layout.handle, layout.handle);
+    ctx.fillStyle = "#2ecc71";
+    ctx.fillRect(layout.originX - layout.handle / 2, layout.originY - layout.arm - layout.handle / 2, layout.handle, layout.handle);
+  }
+  if (toolMode === "move") {
+    ctx.fillStyle = "#e74c3c";
+    ctx.beginPath();
+    ctx.moveTo(layout.originX + layout.arm + 8, layout.originY);
+    ctx.lineTo(layout.originX + layout.arm - 6, layout.originY - 6);
+    ctx.lineTo(layout.originX + layout.arm - 6, layout.originY + 6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#2ecc71";
+    ctx.beginPath();
+    ctx.moveTo(layout.originX, layout.originY - layout.arm - 8);
+    ctx.lineTo(layout.originX - 6, layout.originY - layout.arm + 6);
+    ctx.lineTo(layout.originX + 6, layout.originY - layout.arm + 6);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function ownerOffsetDeltaFromClientDelta(dx, dy) {
+  const scale = Math.max(0.0001, view.zoom * devicePixelRatio);
+  return { x: dx / scale, y: dy / scale };
+}
+
+function applyGizmoDelta(dragState, event) {
+  const dx = event.clientX - dragState.x;
+  const dy = event.clientY - dragState.y;
+  const attachment = dragState.attachmentId
+    ? frameImageAttachments.find((entry) => entry.id === dragState.attachmentId)
+    : null;
+  if (attachment) {
+    const local = attachmentOffsetDeltaFromClientDelta(dx, dy, attachment);
+    const start = dragState.transform;
+    let next = { ...start };
+    if (dragState.handle === "x" && dragState.mode === "gizmo-move") next.offset = { x: start.offset.x + local.x, y: start.offset.y };
+    else if (dragState.handle === "y" && dragState.mode === "gizmo-move") next.offset = { x: start.offset.x, y: start.offset.y + local.y };
+    else if (dragState.mode === "gizmo-move") next.offset = { x: start.offset.x + local.x, y: start.offset.y + local.y };
+    else if (dragState.mode === "gizmo-rotate") {
+      const layout = dragState.layout;
+      const startAngle = Math.atan2(dragState.startY - layout.originY, dragState.startX - layout.originX);
+      const now = stagePoint(event);
+      const nowAngle = Math.atan2(now.y - layout.originY, now.x - layout.originX);
+      next.rotation = start.rotation + ((nowAngle - startAngle) * 180) / Math.PI;
+    } else if (dragState.mode === "gizmo-scale") {
+      const factor = 1 + ((dragState.handle === "y" ? -dy : dx) / 180);
+      const scale = clampAttachmentScale(start.scale * (dragState.handle === "uniform" ? factor : 1));
+      next.scale = dragState.handle === "uniform" ? scale : start.scale;
+      next.scaleX = dragState.handle === "y" ? start.scaleX : clampAttachmentScale(start.scaleX * factor);
+      next.scaleY = dragState.handle === "x" ? start.scaleY : clampAttachmentScale(start.scaleY * factor);
+      if (dragState.handle === "uniform") {
+        next.scaleX = scale;
+        next.scaleY = scale;
+      }
+    }
+    attachment.transform = normalizeAttachmentTransform(next);
+    markDirty();
+    syncAdjustmentInputs();
+    draw();
+    return;
+  }
+  if (dragState.mode === "gizmo-pivot") {
+    setAuthoredTransformPivot(groupPivotLocalFromScreen(stagePoint(event)));
+    markDirty();
+    draw();
+    return;
+  }
+  const local = ownerOffsetDeltaFromClientDelta(dx, dy);
+  const start = dragState.transform;
+  const pivotCompensation = authoredTransformPivot() && !dragState.attachmentId;
+  const applyPivotCompensation = (nextX, nextY) => {
+    if (!pivotCompensation) return;
+    const delta = offsetDeltaFromCanvasDelta(nextX - dragState.spriteOriginX, nextY - dragState.spriteOriginY);
+    els.baseX.value = round(start.offset.x + delta.x);
+    els.baseY.value = round(start.offset.y + delta.y);
+  };
+  if (dragState.mode === "gizmo-move") {
+    const ox = dragState.handle === "y" ? start.offset.x : start.offset.x + local.x;
+    const oy = dragState.handle === "x" ? start.offset.y : start.offset.y + local.y;
+    els.baseX.value = round(ox);
+    els.baseY.value = round(oy);
+    updateAdjustmentFromInputs(els.baseX);
+    return;
+  }
+  if (dragState.mode === "gizmo-rotate") {
+    const layout = dragState.layout;
+    const startAngle = Math.atan2(dragState.startY - layout.originY, dragState.startX - layout.originX);
+    const now = stagePoint(event);
+    const nowAngle = Math.atan2(now.y - layout.originY, now.x - layout.originX);
+    const deltaDeg = ((nowAngle - startAngle) * 180) / Math.PI;
+    els.baseRotation.value = round(start.rotation + deltaDeg);
+    if (pivotCompensation) {
+      const rotated = rotatePoint(
+        { x: dragState.spriteOriginX - layout.originX, y: dragState.spriteOriginY - layout.originY },
+        (deltaDeg * Math.PI) / 180,
+        { x: layout.originX, y: layout.originY },
+      );
+      applyPivotCompensation(rotated.x, rotated.y);
+      updateAdjustmentFromInputs();
+      return;
+    }
+    updateAdjustmentFromInputs(els.baseRotation);
+    return;
+  }
+  if (dragState.mode === "gizmo-scale") {
+    const factor = 1 + ((dragState.handle === "y" ? -dy : dx) / 180);
+    if (dragState.handle === "x") {
+      els.baseScaleX.value = round(clampAttachmentScale(start.scaleX * factor));
+    } else if (dragState.handle === "y") {
+      els.baseScaleY.value = round(clampAttachmentScale(start.scaleY * factor));
+    } else {
+      const scale = round(clampAttachmentScale(start.scale * factor));
+      els.baseScale.value = scale;
+      els.baseScaleX.value = scale;
+      els.baseScaleY.value = scale;
+    }
+    if (pivotCompensation) {
+      const layout = dragState.layout;
+      const sx = dragState.spriteOriginX;
+      const sy = dragState.spriteOriginY;
+      const nextX = dragState.handle === "y" ? sx : layout.originX + (sx - layout.originX) * factor;
+      const nextY = dragState.handle === "x" ? sy : layout.originY + (sy - layout.originY) * factor;
+      applyPivotCompensation(nextX, nextY);
+      updateAdjustmentFromInputs();
+      return;
+    }
+    if (dragState.handle === "x") updateAdjustmentFromInputs(els.baseScaleX);
+    else if (dragState.handle === "y") updateAdjustmentFromInputs(els.baseScaleY);
+    else updateAdjustmentFromInputs(els.baseScale);
+  }
+}
+
+async function listFolders(folderPath) {
+  const query = folderPath ? `?path=${encodeURIComponent(folderPath)}` : "";
+  const res = await fetch(`/api/fs/list${query}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+function renderFolderList(listing) {
+  if (els.folderBrowserPath) els.folderBrowserPath.value = listing.path || "";
+  if (els.folderBrowserMeta) {
+    els.folderBrowserMeta.textContent = listing.engine === "godot"
+      ? t("folderEngineGodot")
+      : listing.engine === "unity"
+        ? t("folderEngineUnity")
+        : listing.liteProject
+          ? t("folderLiteProject")
+          : listing.path || "";
+  }
+  if (!els.folderBrowserList) return;
+  els.folderBrowserList.innerHTML = "";
+  for (const entry of listing.entries || []) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "folderBrowserItem";
+    button.textContent = entry.name;
+    button.addEventListener("click", () => loadFolderListing(entry.path).catch((error) => status(error.message)));
+    els.folderBrowserList.append(button);
+  }
+}
+
+async function loadFolderListing(folderPath) {
+  renderFolderList(await listFolders(folderPath));
+}
+
+async function openFolderBrowser(mode) {
+  folderBrowserMode = mode;
+  if (els.folderBrowserHint) {
+    els.folderBrowserHint.textContent = mode === "lite" ? t("openLiteProjectHint") : t("openProjectHint");
+  }
+  if (mode === "lite") {
+    await fetch("/api/projects", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "discover" }),
+    }).catch(() => null);
+  }
+  const start = mode === "lite"
+    ? (config?.liteProjectsRoot || config?.root || "")
+    : (config?.projectRoot || "");
+  await loadFolderListing(start);
+  els.folderBrowserDialog?.showModal();
+}
+
+async function submitOpenedFolder(folderPath) {
+  const payload = folderBrowserMode === "lite"
+    ? { path: folderPath }
+    : { projectRoot: folderPath };
+  const res = await fetch("/api/projects", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const errorPayload = await res.json().catch(() => ({}));
+    throw new Error(errorPayload.error || res.statusText);
+  }
+  const result = await res.json();
+  els.folderBrowserDialog?.close();
+  if (result.activeProjectId && result.activeProjectId !== activeProjectId()) {
+    await activateProject(result.activeProjectId);
+  } else {
+    imageCache.clear();
+    await loadConfig();
+  }
+  status(t("projectOpened", { name: result.activeProjectId }));
+}
+
+async function createLiteProject() {
+  const label = window.prompt(t("newLiteProjectPrompt"), "lite_project");
+  if (!label) return;
+  const res = await fetch("/api/projects", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ label }),
+  });
+  if (!res.ok) {
+    const errorPayload = await res.json().catch(() => ({}));
+    throw new Error(errorPayload.error || res.statusText);
+  }
+  const result = await res.json();
+  if (result.activeProjectId && result.activeProjectId !== activeProjectId()) {
+    await activateProject(result.activeProjectId);
+  } else {
+    imageCache.clear();
+    await loadConfig();
+  }
+  status(t("projectCreated", { name: result.activeProjectId }));
+}
+
+function currentPhotopeaLayers() {
+  if (!currentGroup || !currentGroup.frames?.[selectedFrame]) return [];
+  const layers = [];
+  for (const item of [...frameLayerStackItems(selectedFrame, currentGroup)].reverse()) {
+    if (item.type === "main") {
+      const frame = currentGroup.frames[selectedFrame];
+      if (frame?.path) {
+        layers.push({
+          name: "owner",
+          kind: "owner",
+          path: frame.path,
+          url: assetUrl(frame),
+          width: Number(frame.width || images[selectedFrame]?.width || 0),
+          height: Number(frame.height || images[selectedFrame]?.height || 0),
+        });
+      }
+      continue;
+    }
+    if (item.type !== "attachment" || !item.attachment?.path) continue;
+    const image = cachedImageForFrame(item.attachment);
+    layers.push({
+      name: String(item.attachment.id || item.attachment.name || "layer"),
+      kind: "attachment",
+      id: item.attachment.id,
+      attachment: item.attachment,
+      path: item.attachment.path,
+      url: assetUrl(item.attachment),
+      width: Number(item.attachment.width || image?.width || 0),
+      height: Number(item.attachment.height || image?.height || 0),
+    });
+  }
+  return layers;
+}
+
+function photopeaOwnerDrawMetrics(index, group) {
+  const img = images[index];
+  if (!img || !group) return null;
+  const t = renderTransformForGroup(frameTransform(index, group), group);
+  const flipH = effectiveFlipH(group);
+  const facing = flipH ? -1 : 1;
+  const worldScale = view.zoom * devicePixelRatio;
+  const runtimeBaseScale = runtimeBaseScaleForGroup(index, group, images);
+  const spriteScaleX = runtimeBaseScale * t.scaleX * worldScale;
+  const spriteScaleY = runtimeBaseScale * t.scaleY * worldScale;
+  const rect = frameScreenRect(index, group, images);
+  if (!rect) return null;
+  if (group.type === "vfx") {
+    const store = valueStore(group);
+    const anchor = cloneVector(store[group.anchor] || group.anchorValue || { x: img.width, y: img.height });
+    return {
+      img,
+      originX: rect.originX,
+      originY: rect.originY,
+      rotation: (Number(t.rotation || 0) * facing * Math.PI) / 180,
+      flipH,
+      drawWidth: img.width * spriteScaleX,
+      drawHeight: img.height * spriteScaleY,
+      sourceWidth: img.width,
+      sourceHeight: img.height,
+      anchorX: Number(anchor.x || 0),
+      anchorY: Number(anchor.y || 0),
+    };
+  }
+  return {
+    img,
+    originX: rect.originX,
+    originY: rect.originY,
+    rotation: (Number(t.rotation || 0) * facing * Math.PI) / 180,
+    flipH,
+    drawWidth: img.width * spriteScaleX,
+    drawHeight: img.height * spriteScaleY,
+    sourceWidth: img.width,
+    sourceHeight: img.height,
+    anchorX: img.width / 2,
+    anchorY: img.height / 2,
+  };
+}
+
+function photopeaAttachmentDrawMetrics(attachment, index, group) {
+  const rect = frameImageAttachmentScreenRect(attachment, index, group, images);
+  if (!rect) return null;
+  return {
+    img: rect.img,
+    originX: rect.originX,
+    originY: rect.originY,
+    rotation: rect.rotation,
+    flipH: rect.flipH,
+    drawWidth: rect.drawWidth,
+    drawHeight: rect.drawHeight,
+    sourceWidth: rect.img.width,
+    sourceHeight: rect.img.height,
+    anchorX: rect.img.width / 2,
+    anchorY: rect.img.height / 2,
+    aabb: rect,
+  };
+}
+
+function photopeaLayerAabb(metrics) {
+  const ox = metrics.anchorX * (metrics.drawWidth / Math.max(metrics.sourceWidth, 1));
+  const oy = metrics.anchorY * (metrics.drawHeight / Math.max(metrics.sourceHeight, 1));
+  const corners = [
+    { x: -ox, y: -oy },
+    { x: -ox + metrics.drawWidth, y: -oy },
+    { x: -ox + metrics.drawWidth, y: -oy + metrics.drawHeight },
+    { x: -ox, y: -oy + metrics.drawHeight },
+  ].map((point) => rotatePoint(point, metrics.rotation, { x: metrics.originX, y: metrics.originY }));
+  const xs = corners.map((point) => point.x);
+  const ys = corners.map((point) => point.y);
+  return {
+    x: Math.min(...xs),
+    y: Math.min(...ys),
+    width: Math.max(...xs) - Math.min(...xs),
+    height: Math.max(...ys) - Math.min(...ys),
+  };
+}
+
+async function withPhotopeaBakeView(fn) {
+  const saved = { zoom: view.zoom, x: view.x, y: view.y };
+  view.zoom = 1 / Math.max(devicePixelRatio, 1);
+  view.x = 0;
+  view.y = 0;
+  try {
+    return await fn();
+  } finally {
+    view.zoom = saved.zoom;
+    view.x = saved.x;
+    view.y = saved.y;
+  }
+}
+
+function pinPhotopeaBakeCorners(bakeCtx, width, height) {
+  if (width < 2 || height < 2) return;
+  const image = bakeCtx.getImageData(0, 0, width, height);
+  const pin = (x, y) => {
+    const index = (y * width + x) * 4;
+    if (image.data[index + 3] === 0) {
+      image.data[index] = 0;
+      image.data[index + 1] = 0;
+      image.data[index + 2] = 0;
+      image.data[index + 3] = 40;
+    }
+  };
+  for (let x = 0; x < width; x += 1) {
+    pin(x, 0);
+    pin(x, height - 1);
+  }
+  for (let y = 0; y < height; y += 1) {
+    pin(0, y);
+    pin(width - 1, y);
+  }
+  bakeCtx.putImageData(image, 0, 0);
+}
+
+function photopeaBakeFrame(bounds) {
+  const contentW = Math.max(1, Number(bounds.width) || 1);
+  const contentH = Math.max(1, Number(bounds.height) || 1);
+  const padding = Math.max(64, Math.round(Math.max(contentW, contentH) * 0.2));
+  const canvasWidth = Math.max(1, Math.ceil(Math.max(contentW, contentH)) + padding * 2);
+  const canvasHeight = canvasWidth;
+  return {
+    canvasWidth,
+    canvasHeight,
+    shiftX: (canvasWidth - contentW) / 2 - Number(bounds.x || 0),
+    shiftY: (canvasHeight - contentH) / 2 - Number(bounds.y || 0),
+  };
+}
+
+function rasterizePhotopeaLayer(metrics, bakeFrame) {
+  const canvas = document.createElement("canvas");
+  canvas.width = bakeFrame.canvasWidth;
+  canvas.height = bakeFrame.canvasHeight;
+  const bakeCtx = canvas.getContext("2d");
+  bakeCtx.imageSmoothingEnabled = true;
+  const originX = metrics.originX + bakeFrame.shiftX;
+  const originY = metrics.originY + bakeFrame.shiftY;
+  const previous = ctx;
+  ctx = bakeCtx;
+  bakeCtx.save();
+  bakeCtx.translate(bakeFrame.shiftX, bakeFrame.shiftY);
+  try {
+    if (typeof metrics.draw === "function") metrics.draw();
+    else {
+      bakeCtx.translate(metrics.originX, metrics.originY);
+      bakeCtx.rotate(metrics.rotation);
+      if (metrics.flipH) bakeCtx.scale(-1, 1);
+      const offsetX = -metrics.anchorX * (metrics.drawWidth / Math.max(metrics.sourceWidth, 1));
+      const offsetY = -metrics.anchorY * (metrics.drawHeight / Math.max(metrics.sourceHeight, 1));
+      bakeCtx.drawImage(metrics.img, offsetX, offsetY, metrics.drawWidth, metrics.drawHeight);
+    }
+  } finally {
+    bakeCtx.restore();
+    ctx = previous;
+  }
+  pinPhotopeaBakeCorners(bakeCtx, canvas.width, canvas.height);
+  return {
+    canvas,
+    dataUrl: canvas.toDataURL("image/png"),
+    placement: {
+      originX,
+      originY,
+      rotation: metrics.rotation,
+      flipH: metrics.flipH,
+      drawWidth: metrics.drawWidth,
+      drawHeight: metrics.drawHeight,
+      sourceWidth: metrics.sourceWidth,
+      sourceHeight: metrics.sourceHeight,
+      anchorX: metrics.anchorX,
+      anchorY: metrics.anchorY,
+    },
+  };
+}
+
+function unbakePhotopeaLayer(exportedImg, placement) {
+  const width = Math.max(1, Math.round(placement.sourceWidth));
+  const height = Math.max(1, Math.round(placement.sourceHeight));
+  const bakeWidth = Math.max(1, Math.round(placement.bakeWidth || exportedImg.width));
+  const bakeHeight = Math.max(1, Math.round(placement.bakeHeight || exportedImg.height));
+  const source = document.createElement("canvas");
+  source.width = bakeWidth;
+  source.height = bakeHeight;
+  source.getContext("2d").drawImage(exportedImg, 0, 0);
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const out = canvas.getContext("2d");
+  out.imageSmoothingEnabled = true;
+  const scaleX = width / Math.max(placement.drawWidth, 0.0001);
+  const scaleY = height / Math.max(placement.drawHeight, 0.0001);
+  out.translate(placement.anchorX, placement.anchorY);
+  out.scale(scaleX, scaleY);
+  if (placement.flipH) out.scale(-1, 1);
+  out.rotate(-placement.rotation);
+  out.translate(-placement.originX, -placement.originY);
+  out.drawImage(source, 0, 0);
+  return canvas.toDataURL("image/png");
+}
+
+function loadImageFromDataUrl(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("无法读取 Photopea 图层。"));
+    img.src = dataUrl;
+  });
+}
+
+async function bakePhotopeaLayers(layers) {
+  return withPhotopeaBakeView(async () => {
+    const index = selectedFrame;
+    const group = currentGroup;
+    const prepared = [];
+    const aabbs = [];
+    for (const layer of layers) {
+      const metrics = layer.kind === "owner"
+        ? photopeaOwnerDrawMetrics(index, group)
+        : photopeaAttachmentDrawMetrics(layer.attachment || frameImageAttachments.find((entry) => entry.id === layer.id), index, group);
+      if (!metrics) throw new Error("无法按编辑器构图烘焙 Photopea 图层。");
+      const attachment = layer.attachment || frameImageAttachments.find((entry) => entry.id === layer.id);
+      metrics.draw = layer.kind === "owner"
+        ? () => drawFrame(index, 1, false, group, images)
+        : () => {
+          const selected = selectedAttachmentId;
+          selectedAttachmentId = "";
+          try {
+            drawFrameImageAttachment(attachment, index, 1, group, images);
+          } finally {
+            selectedAttachmentId = selected;
+          }
+        };
+      prepared.push({ layer, metrics });
+      aabbs.push(photopeaLayerAabb(metrics));
+    }
+    const minX = Math.floor(Math.min(...aabbs.map((box) => box.x)));
+    const minY = Math.floor(Math.min(...aabbs.map((box) => box.y)));
+    const maxX = Math.ceil(Math.max(...aabbs.map((box) => box.x + box.width)));
+    const maxY = Math.ceil(Math.max(...aabbs.map((box) => box.y + box.height)));
+    const bounds = {
+      x: Number.isFinite(minX) ? minX : 0,
+      y: Number.isFinite(minY) ? minY : 0,
+      width: Math.max(1, (Number.isFinite(maxX) ? maxX : 1) - (Number.isFinite(minX) ? minX : 0)),
+      height: Math.max(1, (Number.isFinite(maxY) ? maxY : 1) - (Number.isFinite(minY) ? minY : 0)),
+    };
+    const bakeFrame = photopeaBakeFrame(bounds);
+    return prepared.map(({ layer, metrics }) => {
+      const baked = rasterizePhotopeaLayer(metrics, bakeFrame);
+      const buffer = window.XsxbPhotopeaBridge.pngDataUrlToBuffer(baked.dataUrl);
+      return {
+        ...layer,
+        buffer,
+        width: baked.canvas.width,
+        height: baked.canvas.height,
+        bakeWidth: baked.canvas.width,
+        bakeHeight: baked.canvas.height,
+        offsetX: 0,
+        offsetY: 0,
+        sourceWidth: metrics.sourceWidth,
+        sourceHeight: metrics.sourceHeight,
+        placement: {
+          ...baked.placement,
+          bakeWidth: baked.canvas.width,
+          bakeHeight: baked.canvas.height,
+        },
+      };
+    });
+  });
+}
+
+function forgetCachedAsset(path) {
+  const needle = String(path || "");
+  if (!needle) return;
+  for (const key of [...imageCache.keys()]) {
+    if (String(key).includes(needle)) imageCache.delete(key);
+  }
+  for (const key of [...imageElements.keys()]) {
+    if (String(key).includes(needle) || key === needle) imageElements.delete(key);
+  }
+}
+
+function photopeaAssetUrl(path, version = Date.now()) {
+  return `/asset?path=${encodeURIComponent(path)}&v=${encodeURIComponent(version)}`;
+}
+
+async function snapshotPhotopeaAssets(layers) {
+  if (!window.XsxbPhotopeaBridge || !layers?.length) return [];
+  const snapshots = [];
+  for (const layer of layers) {
+    const buffer = await window.XsxbPhotopeaBridge.fetchAssetBuffer(photopeaAssetUrl(layer.path, layer.assetHash || layer.assetVersion || Date.now()));
+    const parsed = window.XsxbPhotopeaBridge.pngSizeFromBuffer?.(buffer) || {};
+    snapshots.push({
+      path: layer.path,
+      kind: layer.kind,
+      id: layer.id,
+      width: Number(layer.width || parsed.width || 0),
+      height: Number(layer.height || parsed.height || 0),
+      dataUrl: window.XsxbPhotopeaBridge.bufferToPngDataUrl(buffer),
+    });
+  }
+  return snapshots;
+}
+
+async function restoreAssetSnapshots(snapshots, options = {}) {
+  if (!snapshots?.length) return;
+  for (const snapshot of snapshots) {
+    const res = await fetch("/api/replace-frame", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        projectId: activeProjectId(),
+        path: snapshot.path,
+        data: snapshot.dataUrl,
+      }),
+    });
+    if (!res.ok) {
+      const errorPayload = await res.json().catch(() => ({}));
+      throw new Error(errorPayload.error || res.statusText);
+    }
+    const result = await res.json().catch(() => ({}));
+    const hash = result.frame?.assetHash || String(Date.now());
+    forgetCachedAsset(snapshot.path);
+    if (options.reload === false) continue;
+    if (snapshot.kind === "attachment") {
+      const attachment = frameImageAttachments.find((entry) => entry.id === snapshot.id || entry.path === snapshot.path);
+      if (attachment) attachment.assetHash = hash;
+    } else if (currentGroup?.frames) {
+      for (const frame of currentGroup.frames) {
+        if (frame.path === snapshot.path) frame.assetVersion = hash;
+      }
+    }
+  }
+  if (options.reload === false) return;
+  if (currentGroup) {
+    images = await Promise.all(currentGroup.frames.map(loadImageCached));
+    await loadFrameImageAttachmentsForGroup(currentGroup);
+  }
+  renderFilmstrip();
+  draw();
+}
+
+async function openPhotopeaEditor() {
+  if (config?.projectKind === "codex_pets") {
+    status(t("photopeaPetsBlocked"));
+    return;
+  }
+  const layers = currentPhotopeaLayers();
+  if (!layers.length) {
+    status(t("photopeaNoFrame"));
+    return;
+  }
+  if (currentGroup.frames[selectedFrame]?.crop) {
+    status(t("photopeaCroppedBlocked"));
+    return;
+  }
+  if (!window.XsxbPhotopeaBridge || !els.photopeaDialog || !els.photopeaFrame) {
+    status(t("photopeaUnavailable"));
+    return;
+  }
+  photopeaLayers = layers;
+  els.photopeaWriteBack.disabled = true;
+  els.photopeaFrame.src = `${window.XsxbPhotopeaBridge.PHOTOPEA_ORIGIN}/#${encodeURIComponent(JSON.stringify({ files: [] }))}`;
+  els.photopeaDialog.showModal();
+  photopeaSession?.dispose();
+  photopeaSession = window.XsxbPhotopeaBridge.createSession(els.photopeaFrame);
+  try {
+    await photopeaSession.ready();
+    await loadImageCached(currentGroup.frames[selectedFrame]);
+    for (const layer of layers) {
+      if (layer.kind === "attachment") await loadImageCached(layer.attachment || { path: layer.path, assetHash: layer.assetHash });
+    }
+    const loaded = await bakePhotopeaLayers(layers);
+    await window.XsxbPhotopeaBridge.loadLayers(photopeaSession, loaded);
+    photopeaLayers = loaded;
+    els.photopeaWriteBack.disabled = false;
+  } catch (error) {
+    status(t("photopeaFailed", { message: error.message }));
+  }
+}
+
+async function writePhotopeaLayersBack() {
+  if (!photopeaSession || !window.XsxbPhotopeaBridge) throw new Error(t("photopeaUnavailable"));
+  if (!photopeaLayers.length) throw new Error(t("photopeaNoFrame"));
+  if (els.photopeaWriteBack) els.photopeaWriteBack.textContent = t("photopeaWriting");
+  status(t("photopeaWriting"));
+  const previousAssets = await snapshotPhotopeaAssets(photopeaLayers);
+  const beforeState = cloneState();
+  const exported = await window.XsxbPhotopeaBridge.exportNamedLayers(photopeaSession, photopeaLayers);
+  const byName = new Map(exported.map((entry) => [entry.name, entry]));
+  const written = [];
+  for (const layer of photopeaLayers) {
+    const next = byName.get(layer.name);
+    if (!next?.dataUrl) throw new Error(`Photopea 没有导出图层 ${layer.name}。`);
+    const exportedImg = await loadImageFromDataUrl(next.dataUrl);
+    const dataUrl = layer.placement
+      ? unbakePhotopeaLayer(exportedImg, layer.placement)
+      : next.dataUrl;
+    const res = await fetch("/api/replace-frame", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        projectId: activeProjectId(),
+        path: layer.path,
+        data: dataUrl,
+      }),
+    });
+    if (!res.ok) {
+      const errorPayload = await res.json().catch(() => ({}));
+      throw new Error(errorPayload.error || res.statusText);
+    }
+    const result = await res.json().catch(() => ({}));
+    written.push({ layer, hash: result.frame?.assetHash || String(Date.now()) });
+    forgetCachedAsset(layer.path);
+  }
+  if (!written.length) throw new Error("没有图层被写回。");
+  undoStack.push({ label: "photopea", state: beforeState, assets: previousAssets });
+  if (undoStack.length > 80) undoStack.shift();
+  redoStack = [];
+  resetUndoCoalescing();
+  updateHistoryControls();
+  for (const { layer, hash } of written) {
+    if (layer.kind === "attachment") {
+      const attachment = frameImageAttachments.find((entry) => entry.id === layer.id);
+      if (attachment) attachment.assetHash = hash;
+    } else if (currentGroup?.frames?.[selectedFrame]) {
+      currentGroup.frames[selectedFrame].assetVersion = hash;
+    }
+  }
+  if (currentGroup) {
+    images = await Promise.all(currentGroup.frames.map(loadImageCached));
+    await loadFrameImageAttachmentsForGroup(currentGroup);
+  }
+  renderFilmstrip();
+  draw();
+  if (els.photopeaWriteBack) els.photopeaWriteBack.textContent = t("photopeaWriteBack");
+  status(t("photopeaWritten"));
+}
+
+function closePhotopeaEditor() {
+  photopeaSession?.dispose();
+  photopeaSession = null;
+  photopeaLayers = [];
+  if (els.photopeaWriteBack) {
+    els.photopeaWriteBack.disabled = false;
+    els.photopeaWriteBack.textContent = t("photopeaWriteBack");
+  }
+  if (els.photopeaFrame) els.photopeaFrame.src = "about:blank";
+  els.photopeaDialog?.close();
+}
+
 function activateFrameAttachmentForEditing(attachment) {
   if (!attachment || frameAttachmentEditingLocked()) return false;
   const changed = selectedAttachmentId !== attachment.id || adjustmentMode !== "frame";
@@ -1282,6 +2468,7 @@ function copyFrameImageAttachments() {
   }
   frameImageAttachmentClipboard = attachments.map(frameImageAttachmentClipboardItem);
   frameImageAttachmentClipboardProjectId = bindingProjectId();
+  editorClipboard = { kind: "attachment", frameIndex: selectedFrame, groupUiId: currentGroup.uiId, projectId: bindingProjectId() };
   status(t("frameAttachmentCopied", { count: frameImageAttachmentClipboard.length }));
   return true;
 }
@@ -1325,6 +2512,203 @@ function pasteFrameImageAttachments() {
   draw();
   status(t("frameAttachmentPasted", { count: created.length }));
   return true;
+}
+
+function copyEditorSelection() {
+  if (!currentGroup) return false;
+  if (frameAttachmentEditingLocked() && selectedFrameAttachment()) {
+    status(t("frameAttachmentTrailLocked"));
+    return false;
+  }
+  if (selectedFrameAttachment()) return copyFrameImageAttachments();
+  if (isCompositeGroup()) return copyCompositeClips();
+  editorClipboard = {
+    kind: "frame",
+    frameIndex: selectedFrame,
+    groupUiId: currentGroup.uiId,
+    projectId: activeProjectId(),
+  };
+  frameImageAttachmentClipboard = [];
+  frameImageAttachmentClipboardProjectId = "";
+  status(t("frameCopied", { index: selectedFrame + 1 }));
+  return true;
+}
+
+async function pasteEditorSelection() {
+  if (!currentGroup) return false;
+  if (editorClipboard.kind === "attachment" || frameImageAttachmentClipboard.length) {
+    return pasteFrameImageAttachments();
+  }
+  if (isCompositeGroup()) {
+    if (editorClipboard.kind !== "composite") {
+      status(t("frameAttachmentPasteEmpty"));
+      return false;
+    }
+    return pasteCompositeClips();
+  }
+  if (editorClipboard.kind !== "frame") {
+    status(t("frameAttachmentPasteEmpty"));
+    return false;
+  }
+  try {
+    await duplicateFrameAfter(selectedFrame, currentGroup);
+    status(t("framePasted"));
+    return true;
+  } catch (error) {
+    status(`复制帧失败：${error.message}`);
+    return false;
+  }
+}
+
+async function duplicateSelectedFrame() {
+  if (!currentGroup || config?.projectKind === "codex_pets") return false;
+  if (isCompositeGroup()) return duplicateSelectedCompositeClips();
+  try {
+    await duplicateFrameAfter(selectedFrame, currentGroup);
+    return true;
+  } catch (error) {
+    status(`复制帧失败：${error.message}`);
+    return false;
+  }
+}
+
+async function deleteEditorSelection() {
+  if (attackTrailEditor?.deleteActive?.()) return true;
+  if (selectedFrameAttachment()) {
+    removeFrameImageAttachment(selectedAttachmentId);
+    return true;
+  }
+  if (showBoxes && selectedBox && canEditBoxes()) {
+    pushUndo("delete box");
+    for (const frameIndex of selectedFrameIndexes()) deleteBoxOnFrame(selectedBox, frameIndex);
+    syncBoxInputs();
+    draw();
+    return true;
+  }
+  if (isCompositeGroup() && selectedClipIds.size) {
+    pushUndo("delete composite clip");
+    return deleteSelectedCompositeClips();
+  }
+  if (!canEditSequenceFrames(currentGroup)) return false;
+  try {
+    await deleteSequenceFrame(selectedFrame, currentGroup);
+    return true;
+  } catch (error) {
+    status(`删除帧失败：${error.message}`);
+    return false;
+  }
+}
+
+function hideContextMenu() {
+  if (!els.contextMenu) return;
+  els.contextMenu.hidden = true;
+  els.contextMenu.innerHTML = "";
+}
+
+function contextMenuItem(action, label, shortcut = "", enabled = true) {
+  const shortcutMarkup = shortcut ? `<span class="contextMenuShortcut">${escapeHtml(shortcut)}</span>` : "";
+  return `<button type="button" class="contextMenuItem" role="menuitem" data-action="${escapeHtml(action)}" ${enabled ? "" : "disabled"}><span>${escapeHtml(label)}</span>${shortcutMarkup}</button>`;
+}
+
+function showContextMenu(event, items) {
+  if (!els.contextMenu) return;
+  event.preventDefault();
+  event.stopPropagation();
+  els.contextMenu.innerHTML = items.join("");
+  els.contextMenu.hidden = false;
+  const rect = els.contextMenu.getBoundingClientRect();
+  const left = Math.min(event.clientX, window.innerWidth - rect.width - 8);
+  const top = Math.min(event.clientY, window.innerHeight - rect.height - 8);
+  els.contextMenu.style.left = `${Math.max(8, left)}px`;
+  els.contextMenu.style.top = `${Math.max(8, top)}px`;
+}
+
+function contextMenuItemsForSelection() {
+  const canDuplicate = Boolean(currentGroup) && config?.projectKind !== "codex_pets" && Boolean(currentGroup.profileId);
+  const canEditFrames = canEditSequenceFrames(currentGroup);
+  const canDeleteFrame = canEditFrames && (currentGroup?.frames?.length || 0) > 1;
+  const canDeleteAttachment = Boolean(selectedFrameAttachment()) && !frameAttachmentEditingLocked();
+  const canDeleteComposite = isCompositeGroup() && selectedClipIds.size > 0;
+  const canPaste = editorClipboard.kind === "frame"
+    || editorClipboard.kind === "attachment"
+    || editorClipboard.kind === "composite"
+    || frameImageAttachmentClipboard.length > 0;
+  const canCopy = Boolean(currentGroup) && (!isCompositeGroup() || selectedClipIds.size > 0 || Boolean(selectedFrameAttachment()));
+  const selectedCompositeHidden = canDeleteComposite && [...selectedClipIds].every((id) => {
+    const clip = (ensureComposition().clips || []).find((entry) => entry.id === id);
+    const track = (ensureComposition().tracks || []).find((entry) => entry.id === clip?.trackId);
+    return clip?.hidden === true || track?.hidden === true;
+  });
+  const photopeaOk = config?.projectKind !== "codex_pets";
+  const items = [
+    contextMenuItem("undo", t("menuUndo"), "Ctrl+Z", undoStack.length > 0),
+    contextMenuItem("redo", t("menuRedo"), "Ctrl+Y", redoStack.length > 0),
+    `<div class="contextMenuSeparator"></div>`,
+    contextMenuItem("copy", t("menuCopy"), "Ctrl+C", canCopy),
+    contextMenuItem("paste", t("menuPaste"), "Ctrl+V", canPaste && (!isCompositeGroup() || editorClipboard.kind === "composite")),
+    contextMenuItem("duplicate-frame", isCompositeGroup() ? t("compositeDuplicateClips") : t("menuDuplicate"), "Ctrl+D", isCompositeGroup() ? canDeleteComposite : canDuplicate),
+    contextMenuItem("delete-frame", t("menuDelete"), "Delete", canDeleteAttachment || canDeleteFrame || canDeleteComposite || Boolean(showBoxes && selectedBox)),
+  ];
+  if (isCompositeGroup()) {
+    items.push(contextMenuItem(
+      selectedCompositeHidden ? "show-composite" : "hide-composite",
+      selectedCompositeHidden ? t("compositeShowSelected") : t("compositeHideSelected"),
+      "",
+      canDeleteComposite
+    ));
+  } else {
+    items.push(contextMenuItem("insert-blank-frame", t("menuInsertBlank"), "", canEditFrames));
+  }
+  items.push(
+    `<div class="contextMenuSeparator"></div>`,
+    contextMenuItem("photopea", t("menuPhotopea"), "", photopeaOk),
+  );
+  return items;
+}
+
+async function runContextMenuAction(action) {
+  hideContextMenu();
+  if (action === "undo") return undo();
+  if (action === "redo") return redo();
+  if (action === "copy") return copyEditorSelection();
+  if (action === "paste") return pasteEditorSelection();
+  if (action === "duplicate-frame") return duplicateSelectedFrame();
+  if (action === "delete" || action === "delete-frame") return deleteEditorSelection();
+  if (action === "insert-blank-frame") {
+    try {
+      await insertBlankFrameAfter(selectedFrame, currentGroup);
+    } catch (error) {
+      status(`添加空白帧失败：${error.message}`);
+    }
+    return;
+  }
+  if (action === "hide-composite") return setSelectedCompositeHidden(true);
+  if (action === "show-composite") return setSelectedCompositeHidden(false);
+  if (action === "photopea") return openPhotopeaEditor();
+}
+
+function selectUnderPointer(event) {
+  const boxHit = hitTestBoxes(event);
+  if (boxHit) {
+    selectedBox = boxHit.boxName;
+    selectedBoxes.add(selectedBox);
+    showBoxes = true;
+    syncBoxInputs();
+    draw();
+    return "box";
+  }
+  const attachment = hitTestAnyFrameAttachment(event) || hitTestDirectManipulationAttachment(event);
+  if (attachment) {
+    activateFrameAttachmentForEditing(attachment);
+    draw();
+    return "attachment";
+  }
+  if (hitTestOwnerSprite(event)) {
+    clearFrameAttachmentSelection();
+    draw();
+    return "owner";
+  }
+  return "empty";
 }
 
 function frameAudioBinding(index = selectedFrame, group = currentGroup) {
@@ -1702,6 +3086,11 @@ function renderProjectSelect() {
   document.body.classList.toggle("codexPetsProject", petMode);
   document.body.classList.toggle("frameTunerLite", liteMode);
   document.body.classList.toggle("unityProject", config?.projectEngine === "unity" || config?.projectKind === "unity");
+  syncCompositeUi();
+  if (els.openProject) els.openProject.hidden = petMode;
+  if (els.newLiteProject) els.newLiteProject.hidden = !liteMode;
+  if (els.photopeaEdit) els.photopeaEdit.hidden = petMode;
+  setEditorMode(petMode ? "transform" : editorMode, { silent: true });
   if (els.projectBinding) {
     const engine = config?.projectEngine || config?.activeProject?.engine || config?.projectKind || "godot";
     const root = config?.projectRoot || config?.workspaceRoot || "";
@@ -1734,7 +3123,7 @@ function resetProjectSession() {
   imageCache.clear();
   opaqueRectCache = new WeakMap();
   huangXianAnchorXCache = new WeakMap();
-  if (els.playPause) els.playPause.textContent = t("play");
+  if (els.playPause) syncPlayPauseButton();
   if (els.filmstrip) els.filmstrip.innerHTML = "";
   if (els.canvasTitle) els.canvasTitle.textContent = t("canvas");
   if (els.selectionHud) els.selectionHud.textContent = `${t("frame")} -`;
@@ -1919,7 +3308,7 @@ function renderChainGroupSelect(selectedUiId = els.chainGroupSelect?.value || ""
 
 function updateGroupMeta() {}
 
-async function loadConfig() {
+async function loadConfig(options = {}) {
   const configUrl = selectedProjectId ? `/api/config?project=${encodeURIComponent(selectedProjectId)}` : "/api/config";
   const res = await fetch(configUrl);
   if (!res.ok) throw new Error(await res.text());
@@ -1929,7 +3318,12 @@ async function loadConfig() {
   attackTrailEditor?.load(config.attackTrails);
   selectedProjectId = config.activeProjectId || selectedProjectId || "";
   if (selectedProjectId) localStorage.setItem("xsxbFrameTuner.project", selectedProjectId);
-  config.groups.forEach((group, index) => { group.uiId = `${group.tuningTarget || "player"}:${group.type}:${group.name}:${index}`; });
+  config.groups.forEach((group, index) => {
+    group.uiId = `${group.tuningTarget || "player"}:${group.type}:${group.name}:${index}`;
+    if (String(group.kind || "") === "composite") {
+      group.composition = window.XsxbCompositeSequence?.normalizeComposition?.(group.composition) || group.composition;
+    }
+  });
   values = { ...config.tuning };
   bossValues = { ...(config.bossTuning || {}) };
   act2StatueBossValues = { ...(config.act2StatueBossTuning || {}) };
@@ -1953,25 +3347,51 @@ async function loadConfig() {
   soulFrameBoxOverrides = structuredClone(config.soulTuning?.frame_box_overrides || {});
   yechengPropFrameOverrides = structuredClone(config.yechengPropTuning?.frame_visual_overrides || {});
   loadFrameImageAttachmentsFromProject();
-  resetFrameAudioBindings();
-  if (config.projectKind !== "codex_pets") {
+  if (!options.reuseAudio) {
+    resetFrameAudioBindings();
+    if (config.projectKind !== "codex_pets") {
+      loadFrameAudioBindingsFromProject();
+      await loadFrameAudioBindingsFromDb();
+    }
+    if (config.projectKind !== "codex_pets" && config.projectEngine !== "unity" && Object.keys(frameAudioBindings).length) {
+      await syncFrameAudioBindingsToGame({ silent: true }).catch((error) => {
+        status(t("boxSyncFailed", { message: error.message }));
+      });
+    }
+  } else if (config.projectKind !== "codex_pets") {
     loadFrameAudioBindingsFromProject();
-    await loadFrameAudioBindingsFromDb();
-  }
-  if (config.projectKind !== "codex_pets" && config.projectEngine !== "unity" && Object.keys(frameAudioBindings).length) {
-    await syncFrameAudioBindingsToGame({ silent: true }).catch((error) => {
-      status(t("boxSyncFailed", { message: error.message }));
-    });
   }
   if (els.groupSearch) els.groupSearch.value = groupSearch;
-  renderProjectSelect();
-  renderSceneSelect();
-  renderProfileSelect();
+  if (!options.skipChrome) {
+    renderProjectSelect();
+    renderSceneSelect();
+    renderProfileSelect();
+  }
   renderGroupSelect();
   renderChainGroupSelect();
   updateSaveState();
   updateHistoryControls();
-  startPreloadImages();
+  if (!options.skipPreload) startPreloadImages();
+  if (options.keepGroup) {
+    const groupIdentity = options.keepGroup;
+    const editedGroup = config.groups.find((entry) => (
+      entry.profileId === groupIdentity.profileId
+      && String(entry.runtimeAnimation || entry.name || "") === groupIdentity.runtimeAnimation
+    )) || config.groups.find((entry) => entry.profileId === groupIdentity.profileId && (
+      entry.name === groupIdentity.name
+      || entry.animationId === groupIdentity.animationId
+      || sequenceAnimationId(entry) === groupIdentity.animationId
+    ));
+    if (editedGroup) {
+      await selectGroup(editedGroup, {
+        frameIndex: Number(options.frameIndex ?? selectedFrame ?? 0),
+        preserveView: true,
+      });
+    }
+    status(loadedStatusText());
+    window.dispatchEvent(new CustomEvent("xsxb-frame-tuner-config", { detail: { projectKind: config.projectKind, projectId: config.activeProjectId } }));
+    return;
+  }
   const savedGroupUiId = localStorage.getItem("animationTuner.groupUiId");
   const requestedGroup = PAGE_PARAMS.get("group");
   const initialGroup = config.groups.find((group) => requestedGroup && group.name === requestedGroup && (!PAGE_PARAMS.get("profile") || group.profileId === PAGE_PARAMS.get("profile")))
@@ -1989,6 +3409,7 @@ async function loadConfig() {
       attackTrailEditor.stickId = "";
       attackTrailEditor.render();
       document.querySelector("#attackTrailPanel").open = true;
+      setEditorMode("trails", { silent: true });
       draw();
     }
   } else {
@@ -2011,7 +3432,7 @@ async function selectGroup(group, options = {}) {
     playing = false;
     playbackPrimaryGroup = null;
     playbackSecondaryGroup = null;
-    if (els.playPause) els.playPause.textContent = t("play");
+    if (els.playPause) syncPlayPauseButton();
   }
   if (selectedProfileId !== "all" && group.profileId !== selectedProfileId) {
     selectedProfileId = group.profileId || "all";
@@ -2023,11 +3444,21 @@ async function selectGroup(group, options = {}) {
   renderSceneSelect();
   localStorage.setItem("animationTuner.groupUiId", group.uiId);
   selectedFrame = Number.isInteger(options.frameIndex) ? options.frameIndex : 0;
-  images = await Promise.all(group.frames.map(loadImageCached));
+  images = await Promise.all((group.frames || []).map(loadImageCached));
   if (group.huangXianAnchorFrame) {
     group.huangXianAnchorImage = await loadImageCached(group.huangXianAnchorFrame);
   } else {
     delete group.huangXianAnchorImage;
+  }
+  if (isCompositeGroup(group)) {
+    group.composition = compositeApi().normalizeComposition?.(group.composition) || ensureComposition(group);
+    compositeApi().pruneEmptyTracks?.(group.composition);
+    compositePlayheadMs = 0;
+    selectedClipIds = new Set();
+    await loadCompositeSourceImages(group);
+  } else {
+    compositeSourceImages = new Map();
+    selectedClipIds = new Set();
   }
   await loadCompositeContext(group);
   await loadFrameImageAttachmentsForGroup(group);
@@ -2051,6 +3482,7 @@ async function selectGroup(group, options = {}) {
   syncFrameInputs();
   syncGroupPlaybackInputs();
   syncGroupTimeInputs();
+  syncCompositeUi();
   renderFilmstrip();
   attackTrailEditor?.contextChanged();
   const preserveView = options.preserveView === true || (options.preserveView !== false && hadCurrentGroup);
@@ -2126,7 +3558,9 @@ function startPreloadImages() {
   for (const frame of frames.values()) {
     loadImageCached(frame).then(() => {
       preloadLoaded += 1;
-      if (preloadLoaded === preloadTotal) status(t("preloadedFrames", { count: preloadTotal, root: config.root }));
+      if (preloadLoaded === preloadTotal && els.status?.dataset.sticky !== "1") {
+        status(t("preloadedFrames", { count: preloadTotal, root: config.root }));
+      }
     }).catch(() => {
       preloadLoaded += 1;
     });
@@ -2495,7 +3929,18 @@ function cloneState() {
     selectedFrames: Array.from(selectedFrames),
     selectionAnchorFrame,
     groupName: currentGroup?.uiId,
+    compositions: snapshotCompositions(),
+    compositePlayheadMs,
+    selectedClipIds: Array.from(selectedClipIds),
   };
+}
+
+function syncPlayPauseButton() {
+  if (!els.playPause) return;
+  els.playPause.textContent = playing ? "❚❚" : "▶";
+  const label = playing ? t("pause") : t("play");
+  els.playPause.title = label;
+  els.playPause.setAttribute("aria-label", label);
 }
 
 function updateHistoryControls() {
@@ -2557,6 +4002,9 @@ function restoreHistoryState(state) {
   soulPlaybackOverrides = structuredClone(state.soulPlaybackOverrides || {});
   soulFrameBoxOverrides = structuredClone(state.soulFrameBoxOverrides || {});
   yechengPropFrameOverrides = structuredClone(state.yechengPropFrameOverrides || {});
+  restoreCompositions(state.compositions);
+  compositePlayheadMs = Number(state.compositePlayheadMs || 0);
+  selectedClipIds = new Set(Array.isArray(state.selectedClipIds) ? state.selectedClipIds : []);
   const group = config.groups.find((entry) => entry.uiId === state.groupName) || currentGroup;
   renderSceneSelect();
   syncSceneInputs();
@@ -2576,14 +4024,20 @@ function undo() {
     updateHistoryControls();
     return;
   }
-  redoStack.push({ label: item.label, state: cloneState() });
+  const redoItem = { label: item.label, state: cloneState() };
+  redoStack.push(redoItem);
   if (redoStack.length > 80) redoStack.shift();
   updateHistoryControls();
-  restoreHistoryState(item.state).then(() => {
+  (async () => {
+    if (item.assets?.length) {
+      redoItem.assets = await snapshotPhotopeaAssets(item.assets);
+      await restoreAssetSnapshots(item.assets, { reload: false });
+    }
+    await restoreHistoryState(item.state);
     markDirty(adjustmentMode === "character" ? { profileId: currentGroup?.profileId } : undefined);
     updateHistoryControls();
     status(t("undone", { label: item.label }));
-  });
+  })().catch((error) => status(t("photopeaFailed", { message: error.message })));
 }
 
 function redo() {
@@ -2594,14 +4048,20 @@ function redo() {
     updateHistoryControls();
     return;
   }
-  undoStack.push({ label: item.label, state: cloneState() });
+  const undoItem = { label: item.label, state: cloneState() };
+  undoStack.push(undoItem);
   if (undoStack.length > 80) undoStack.shift();
   updateHistoryControls();
-  restoreHistoryState(item.state).then(() => {
+  (async () => {
+    if (item.assets?.length) {
+      undoItem.assets = await snapshotPhotopeaAssets(item.assets);
+      await restoreAssetSnapshots(item.assets, { reload: false });
+    }
+    await restoreHistoryState(item.state);
     markDirty(adjustmentMode === "character" ? { profileId: currentGroup?.profileId } : undefined);
     updateHistoryControls();
     status(t("redone", { label: item.label }));
-  });
+  })().catch((error) => status(t("photopeaFailed", { message: error.message })));
 }
 
 function clampFrameIndex(index, group = currentGroup) {
@@ -2654,14 +4114,14 @@ function updateWorkbenchHud(group = currentGroup) {
 }
 
 function updateCanvasTitle(group = currentGroup) {
-  if (!group) {
-    els.canvasTitle.textContent = t("canvas");
-    updateWorkbenchHud(null);
-    return;
+  if (els.canvasTitle) {
+    if (!group) els.canvasTitle.textContent = t("canvas");
+    else {
+      const count = selectedFrameCount();
+      els.canvasTitle.textContent = `${group.name} - ${t("frameCountLabel", { count: group.frames.length })}${count > 1 ? ` - ${t("selectedFrames", { count })}` : ""}`;
+    }
   }
-  const count = selectedFrameCount();
-  els.canvasTitle.textContent = `${group.name} - ${t("frameCountLabel", { count: group.frames.length })}${count > 1 ? ` - ${t("selectedFrames", { count })}` : ""}`;
-  updateWorkbenchHud(group);
+  updateWorkbenchHud(group || null);
 }
 
 function frameTransform(index = selectedFrame, group = currentGroup) {
@@ -3685,7 +5145,7 @@ function pointInBoxRect(point, rect, padding = 0) {
 }
 
 function hitTestBoxes(event) {
-  if (!showBoxes || !canEditBoxes()) return null;
+  if (!showBoxes || editorMode !== "boxes" || !canEditBoxes()) return null;
   const point = stagePoint(event);
   const boxNames = BOX_DRAW_ORDER.slice().reverse().filter((name) => selectedBoxes.has(name));
   if (event.altKey) {
@@ -4004,6 +5464,13 @@ function syncAdjustmentInputs() {
     els.rebaseGroupOrigin.hidden = !showRebase;
     els.rebaseGroupOrigin.disabled = !showRebase;
   }
+  if (els.alignTransformPivot) {
+    const showAlign = adjustmentMode === "group" && Boolean(currentGroup) && canEditGroupTransform();
+    const originZero = showAlign && groupOriginIsZero();
+    els.alignTransformPivot.hidden = !showAlign;
+    els.alignTransformPivot.disabled = !originZero;
+    els.alignTransformPivot.title = originZero ? t("alignTransformPivot") : t("alignTransformPivotNeedRebase");
+  }
 }
 
 function syncBaseInputs() {
@@ -4108,7 +5575,7 @@ function selectFilmstripFrame(index, event = null) {
   }
   playing = false;
   playbackPrimaryGroup = null;
-  if (els.playPause) els.playPause.textContent = t("play");
+  if (els.playPause) syncPlayPauseButton();
   updateCanvasTitle();
   syncFrameInputs();
   renderFilmstrip();
@@ -4118,6 +5585,10 @@ function selectFilmstripFrame(index, event = null) {
 function renderFilmstrip() {
   els.filmstrip.innerHTML = "";
   if (!currentGroup) return;
+  if (isCompositeGroup(currentGroup)) {
+    renderCompositeTimeline();
+    return;
+  }
   renderFilmstripGroup(currentGroup, t("mainLabel"));
   const chain = playbackChainGroup();
   if (chain && chain.uiId !== currentGroup.uiId) {
@@ -4366,23 +5837,14 @@ function createFrameImageAttachmentCard(attachment, index, group, label) {
   const selected = selectedAttachmentId === attachment.id;
   const below = attachmentLayerOrder(attachment) < 0;
   card.className = `thumb attachmentThumb ${selected ? "selectedAttachment" : ""} ${below ? "layerBelow" : "layerAbove"} ${!isCurrent ? "chained" : ""} ${locked ? "lockedAttachment" : ""}`;
+  card.dataset.attachmentId = attachment.id;
   const layerTitle = below ? t("frameAttachmentLayerBelow") : t("frameAttachmentLayerAbove");
   card.title = `${label}${index + 1} - ${attachment.name || "image"}\n${layerTitle}${locked ? `\n${t("frameAttachmentTrailLocked")}` : ""}`;
   card.setAttribute("aria-disabled", locked ? "true" : "false");
   card.innerHTML = `
-    <span class="attachmentActions">
-      <button class="attachmentAction" data-action="remove-attachment" title="${escapeHtml(t("frameAttachmentRemove"))}">×</button>
-    </span>
     ${locked ? '<span class="attachmentLockBadge" aria-hidden="true">锁</span>' : ""}
     <img src="${assetUrl(attachment)}" alt="">
     <span class="thumbLabel">${label}${index + 1}</span>`;
-  const removeButton = card.querySelector('[data-action="remove-attachment"]');
-  removeButton.disabled = locked;
-  removeButton.addEventListener("click", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    removeFrameImageAttachment(attachment.id);
-  });
   card.addEventListener("click", async (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -4431,17 +5893,13 @@ async function duplicateFrameAfter(index, group) {
     throw new Error(errorPayload.error || res.statusText);
   }
   const result = await res.json().catch(() => ({}));
-  await loadConfig();
-  const copiedGroup = config.groups.find((entry) => (
-    entry.profileId === groupIdentity.profileId
-    && String(entry.runtimeAnimation || entry.name || "") === groupIdentity.runtimeAnimation
-  )) || config.groups.find((entry) => entry.profileId === groupIdentity.profileId && entry.name === groupIdentity.name);
-  if (copiedGroup) {
-    await selectGroup(copiedGroup, {
-      frameIndex: Number(result.frameIndex ?? index + 1),
-      preserveView: true,
-    });
-  }
+  await loadConfig({
+    reuseAudio: true,
+    skipChrome: true,
+    skipPreload: true,
+    keepGroup: groupIdentity,
+    frameIndex: Number(result.frameIndex ?? index + 1),
+  });
   status(`已复制第 ${index + 1} 帧，并插入到右侧。`);
 }
 
@@ -4456,7 +5914,1154 @@ function canEditSequenceFrames(group = currentGroup) {
   return Boolean(group)
     && group.uiId === currentGroup?.uiId
     && config?.projectKind !== "codex_pets"
-    && Boolean(group.profileId);
+    && Boolean(group.profileId)
+    && !isCompositeGroup(group);
+}
+
+function compositeApi() {
+  return window.XsxbCompositeSequence || {};
+}
+
+function isCompositeGroup(group = currentGroup) {
+  return Boolean(compositeApi().isCompositeGroup?.(group) || String(group?.kind || "") === "composite");
+}
+
+function compositeSupportsUi() {
+  return config?.projectKind !== "codex_pets";
+}
+
+function ensureComposition(group = currentGroup) {
+  if (!group) return compositeApi().createEmptyComposition?.() || { durationMs: 1000, tracks: [], clips: [] };
+  group.composition = compositeApi().normalizeComposition?.(group.composition) || group.composition || {
+    durationMs: 1000,
+    tracks: [],
+    clips: [],
+  };
+  return group.composition;
+}
+
+function resolveClipSource(clip) {
+  return compositeApi().matchSourceGroup?.(config?.groups || [], clip) || null;
+}
+
+function compositeDurationMs(group = currentGroup) {
+  if (!isCompositeGroup(group)) return 0;
+  return compositeApi().compositionDurationMs?.(ensureComposition(group), resolveClipSource) || 1;
+}
+
+function setCompositePlayheadMs(ms, group = currentGroup) {
+  const duration = Math.max(1, compositeDurationMs(group));
+  compositePlayheadMs = Math.min(Math.max(0, Number(ms) || 0), duration);
+}
+
+function activeCompositeSamples(timeMs = compositePlayheadMs, group = currentGroup) {
+  if (!isCompositeGroup(group)) return [];
+  return compositeApi().activeClipsAtTime?.(ensureComposition(group), timeMs, resolveClipSource) || [];
+}
+
+function clipSourceImages(sourceGroup) {
+  if (!sourceGroup) return [];
+  if (sourceGroup.uiId === currentGroup?.uiId) return images;
+  return compositeSourceImages.get(sourceGroup.uiId) || [];
+}
+
+function mergeClipTransform(clip, sourceGroup, frameIndex) {
+  const base = frameTransform(frameIndex, sourceGroup);
+  const extra = clip?.transform || { offset: { x: 0, y: 0 }, scale: 1, scaleX: 1, scaleY: 1, rotation: 0 };
+  return {
+    offset: {
+      x: Number(base.offset?.x || 0) + Number(extra.offset?.x || 0),
+      y: Number(base.offset?.y || 0) + Number(extra.offset?.y || 0),
+    },
+    scale: Number(base.scale || 1) * Number(extra.scale || 1),
+    scaleX: Number(base.scaleX || base.scale || 1) * Number(extra.scaleX || extra.scale || 1),
+    scaleY: Number(base.scaleY || base.scale || 1) * Number(extra.scaleY || extra.scale || 1),
+    rotation: Number(base.rotation || 0) + Number(extra.rotation || 0),
+  };
+}
+
+function clipDrawOptions(sampled) {
+  return {
+    transform: mergeClipTransform(sampled.clip, sampled.sourceGroup, sampled.frameIndex),
+  };
+}
+
+async function loadCompositeSourceImages(group = currentGroup) {
+  compositeSourceImages = new Map();
+  if (!isCompositeGroup(group)) return;
+  const composition = ensureComposition(group);
+  const needed = new Set();
+  for (const clip of composition.clips || []) {
+    const source = resolveClipSource(clip);
+    if (source?.uiId) needed.add(source.uiId);
+  }
+  await Promise.all([...needed].map(async (uiId) => {
+    const source = (config?.groups || []).find((entry) => entry.uiId === uiId);
+    if (!source) return;
+    compositeSourceImages.set(uiId, await Promise.all((source.frames || []).map((frame) => loadImageCached(frame).catch(() => null))));
+  }));
+}
+
+function syncCompositeUi() {
+  const show = compositeSupportsUi();
+  if (els.compositeActions) els.compositeActions.hidden = !show;
+  const editing = show && isCompositeGroup();
+  if (els.compositeAddClipField) els.compositeAddClipField.hidden = !editing;
+  if (els.createCompositeFromCurrent) {
+    els.createCompositeFromCurrent.disabled = !show || !currentGroup || isCompositeGroup(currentGroup);
+  }
+  if (els.createCompositeEmpty) els.createCompositeEmpty.disabled = !show;
+  if (editing) populateCompositeAddClipSelect();
+  document.body.classList.toggle("compositeSequence", editing);
+  if (els.filmstrip) els.filmstrip.classList.toggle("compositeTimeline", editing);
+}
+
+function compositeClipSourceGroups() {
+  return (config?.groups || []).filter((group) => (
+    !isCompositeGroup(group)
+    && !group.previewOwner
+    && Array.isArray(group.frames)
+    && group.frames.length
+  ));
+}
+
+function compositeClipDisplayName(clip, source) {
+  const name = source?.name || clip?.source?.animationId || clip?.id || "";
+  const profileId = source?.profileId || clip?.source?.profileId || "";
+  if (profileId && currentGroup?.profileId && profileId !== currentGroup.profileId) {
+    return `${source?.profileLabel || profileId} · ${name}`;
+  }
+  return name;
+}
+
+function populateCompositeAddClipSelect() {
+  if (!els.compositeAddClipSelect || !currentGroup) return;
+  const currentProfileId = String(currentGroup.profileId || "");
+  const options = compositeClipSourceGroups();
+  const sections = [];
+  const seen = new Set();
+  const pushSection = (profileId) => {
+    const key = String(profileId || "");
+    if (seen.has(key)) return;
+    seen.add(key);
+    const groups = options.filter((group) => String(group.profileId || "") === key);
+    if (!groups.length) return;
+    sections.push({
+      label: groups[0].profileLabel || groups[0].profileId || key || t("compositeSelectClip"),
+      groups,
+    });
+  };
+  if (currentProfileId) pushSection(currentProfileId);
+  for (const group of options) pushSection(group.profileId);
+  const grouped = sections.length > 1;
+  els.compositeAddClipSelect.innerHTML = [
+    `<option value="">${escapeHtml(t("compositeSelectClip"))}</option>`,
+    ...sections.map((section) => {
+      const optionMarkup = section.groups.map((group) => (
+        `<option value="${escapeHtml(group.uiId)}">${escapeHtml(group.name)}</option>`
+      )).join("");
+      if (!grouped) return optionMarkup;
+      return `<optgroup label="${escapeHtml(section.label)}">${optionMarkup}</optgroup>`;
+    }),
+  ].join("");
+}
+
+function snapshotCompositions() {
+  const snapshot = {};
+  for (const group of config?.groups || []) {
+    if (!isCompositeGroup(group)) continue;
+    snapshot[group.uiId] = structuredClone(ensureComposition(group));
+  }
+  return snapshot;
+}
+
+function restoreCompositions(snapshot) {
+  for (const group of config?.groups || []) {
+    if (!isCompositeGroup(group)) continue;
+    if (snapshot?.[group.uiId]) group.composition = structuredClone(snapshot[group.uiId]);
+  }
+}
+
+function markCompositeDirty() {
+  if (!currentGroup) return;
+  ensureComposition().durationMs = compositeDurationMs();
+  markDirty({ groups: [currentGroup] });
+}
+
+function addClipFromGroup(sourceGroup, options = {}) {
+  if (!isCompositeGroup() || !sourceGroup) return null;
+  if (isCompositeGroup(sourceGroup)) {
+    status(t("compositeNestedBlocked"));
+    return null;
+  }
+  const composition = ensureComposition();
+  const startMs = Math.max(0, Number(options.startMs || 0));
+  const displayName = compositeClipDisplayName({
+    source: { profileId: sourceGroup.profileId, animationId: sourceGroup.animationId || sequenceAnimationId(sourceGroup) },
+  }, sourceGroup);
+  const track = options.trackId
+    ? (composition.tracks || []).find((entry) => entry.id === options.trackId)
+    : compositeApi().addLayerTrack?.(composition, { name: displayName });
+  const trackId = options.trackId || track?.id || "track_0";
+  if (track && displayName && !options.trackId) track.name = displayName;
+  const clip = compositeApi().createClipFromGroup?.(sourceGroup, {
+    trackId,
+    startMs,
+  });
+  if (!clip) return null;
+  composition.clips.push(clip);
+  composition.durationMs = compositeDurationMs();
+  selectedClipIds = new Set([clip.id]);
+  markCompositeDirty();
+  return clip;
+}
+
+async function postCompositeSequence(payload) {
+  const res = await fetch("/api/composite-sequence", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      projectId: activeProjectId(),
+      configRevision: config?.configRevision || "",
+      ...payload,
+    }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || res.statusText);
+  if (body.configRevision) config.configRevision = body.configRevision;
+  return body;
+}
+
+async function selectCompositeByIds(profileId, animationId, name) {
+  imageCache.clear();
+  const wantedProfile = String(profileId || "");
+  const wantedAnimation = String(animationId || "");
+  const wantedName = String(name || animationId || "");
+  await loadConfig({
+    reuseAudio: true,
+    keepGroup: {
+      profileId: wantedProfile,
+      runtimeAnimation: `${wantedProfile}/${wantedAnimation}`,
+      name: wantedName,
+      animationId: wantedAnimation,
+    },
+  });
+  const group = (config.groups || []).find((entry) => (
+    (!wantedProfile || entry.profileId === wantedProfile)
+    && (entry.animationId === wantedAnimation
+      || sequenceAnimationId(entry) === wantedAnimation
+      || entry.name === wantedAnimation
+      || entry.name === wantedName)
+  )) || (config.groups || []).find((entry) => (
+    entry.animationId === wantedAnimation || sequenceAnimationId(entry) === wantedAnimation
+  ));
+  if (group) {
+    if (group.profileId) {
+      selectedProfileId = group.profileId;
+      localStorage.setItem("animationTuner.profile", selectedProfileId);
+      renderProfileSelect();
+    }
+    if (currentGroup?.uiId !== group.uiId) await selectGroup(group);
+    else {
+      renderGroupSelect(group.uiId);
+      syncCompositeUi();
+      renderFilmstrip();
+      draw();
+    }
+  }
+  return group;
+}
+
+function compositeTargetProfileId(fromCurrent) {
+  if (fromCurrent) return currentGroup?.profileId || "";
+  if (currentGroup?.profileId) return currentGroup.profileId;
+  if (selectedProfileId && selectedProfileId !== "all") return selectedProfileId;
+  const profiles = Array.isArray(config?.profiles) ? config.profiles : [];
+  if (profiles.length === 1) return profiles[0].id;
+  const grouped = (config?.groups || []).map((group) => group.profileId).filter(Boolean);
+  return grouped.length === 1 ? grouped[0] : "";
+}
+
+async function createCompositeSequence(fromCurrent) {
+  if (!compositeSupportsUi()) {
+    status(t("compositePetsHidden"));
+    return;
+  }
+  const source = fromCurrent && currentGroup && !isCompositeGroup(currentGroup) ? currentGroup : null;
+  if (fromCurrent && !source) {
+    status(t("compositeNeedSource"));
+    return;
+  }
+  const profileId = compositeTargetProfileId(fromCurrent);
+  if (!profileId) {
+    status(t("compositeNeedProfile"));
+    return;
+  }
+  const created = await postCompositeSequence({
+    action: "create",
+    profileId,
+    profileLabel: source?.profileLabel
+      || (config?.profiles || []).find((entry) => entry.id === profileId)?.label
+      || profileId,
+    fromAnimationId: fromCurrent ? (source.animationId || sequenceAnimationId(source)) : "",
+    animationId: fromCurrent ? `${source.animationId || sequenceAnimationId(source)}_comp` : "composite",
+    name: fromCurrent ? `${source.name}_comp` : "composite",
+    fps: source?.speed || currentGroup?.speed || 12,
+  });
+  const selected = await selectCompositeByIds(created.profileId, created.animationId, created.name);
+  if (!selected) {
+    status(t("compositeCreated", { name: created.name || created.animationId }) + "（未切换到新组，请在组列表中选择）", { sticky: true });
+    return;
+  }
+  status(t("compositeCreated", { name: created.name || created.animationId }), { sticky: true });
+}
+
+function filesToPngPayload(files) {
+  return Promise.all(files.map((file) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve({ name: file.name, data: String(reader.result || "") });
+    reader.onerror = () => reject(new Error(file.name));
+    reader.readAsDataURL(file);
+  })));
+}
+
+async function importPngsAsCompositeClip(fileList, options = {}) {
+  if (!isCompositeGroup()) return;
+  const files = Array.from(fileList || []).filter((file) => /\.png$/i.test(file.name));
+  if (!files.length) return;
+  const firstName = pathBaseName(files[0].name).replace(/[_-]?\d+$/, "") || "footage";
+  const imported = await postCompositeSequence({
+    action: "import-footage",
+    profileId: currentGroup.profileId,
+    profileLabel: currentGroup.profileLabel || currentGroup.profileId,
+    animationId: firstName,
+    name: firstName,
+    fps: currentGroup.speed || 12,
+    files: await filesToPngPayload(files),
+  });
+  await selectCompositeByIds(currentGroup.profileId, currentGroup.animationId || sequenceAnimationId(currentGroup));
+  const source = (config.groups || []).find((group) => group.profileId === imported.profileId
+    && (group.animationId === imported.animationId || sequenceAnimationId(group) === imported.animationId));
+  if (source) {
+    addClipFromGroup(source, options);
+    await loadCompositeSourceImages(currentGroup);
+    renderFilmstrip();
+    draw();
+    status(t("compositeClipAdded", { name: compositeClipDisplayName({ source: { profileId: source.profileId, animationId: source.animationId } }, source) }));
+  }
+}
+
+function pathBaseName(value) {
+  return String(value || "").replace(/^.*[\\/]/, "").replace(/\.[^.]+$/, "");
+}
+
+function timelineMetrics(group = currentGroup) {
+  const composition = ensureComposition(group);
+  const duration = Math.max(1, compositeDurationMs(group));
+  const labelWidth = 132;
+  const width = Math.max(120, (els.filmstrip?.clientWidth || 640) - labelWidth);
+  return {
+    composition,
+    duration,
+    labelWidth,
+    width,
+    pxPerMs: width / duration,
+  };
+}
+
+function compositeClipFrameSlices(clip, source) {
+  const frames = source?.frames || [];
+  const range = compositeApi().clipSourceRange?.(clip, frames) || { start: 0, end: frames.length - 1 };
+  const slices = [];
+  let elapsed = 0;
+  for (let index = range.start; index <= range.end; index += 1) {
+    const frame = frames[index];
+    const durationMs = Math.max(1, compositeApi().frameDurationMs?.(frame, source?.speed) || 1);
+    slices.push({ index, frame, startMs: elapsed, durationMs });
+    elapsed += durationMs;
+  }
+  return slices;
+}
+
+function splitSelectedCompositeClips() {
+  if (!isCompositeGroup()) return false;
+  const composition = ensureComposition();
+  const time = compositePlayheadMs;
+  const hits = (composition.clips || []).filter((clip) => {
+    const source = resolveClipSource(clip);
+    const start = Number(clip.startMs || 0);
+    const end = start + (compositeApi().clipDurationMs?.(clip, source) || 0);
+    return time > start && time < end;
+  });
+  const targets = selectedClipIds.size
+    ? hits.filter((clip) => selectedClipIds.has(clip.id))
+    : hits;
+  if (!targets.length) return false;
+  pushUndo("split composite clips");
+  const nextIds = new Set();
+  for (const clip of targets) {
+    const result = compositeApi().splitClip?.(clip, resolveClipSource(clip), time);
+    if (result?.right) {
+      composition.clips.push(result.right);
+      nextIds.add(result.right.id);
+    }
+  }
+  if (nextIds.size) selectedClipIds = nextIds;
+  composition.durationMs = compositeDurationMs();
+  markCompositeDirty();
+  renderFilmstrip();
+  draw();
+  status(t("compositeSplitDone", { count: nextIds.size || targets.length }));
+  return true;
+}
+
+function ensureCompositeTimelineView() {
+  if (compositeTimelineView) return compositeTimelineView;
+  compositeTimelineView = window.XsxbCompositeTimeline.create({
+    t,
+    api: compositeApi,
+    filmstrip: () => els.filmstrip,
+    getComposition: () => ensureComposition(),
+    getDuration: () => compositeDurationMs(),
+    getPlayhead: () => compositePlayheadMs,
+    setPlayhead: (ms) => setCompositePlayheadMs(ms),
+    getSelected: () => selectedClipIds,
+    setSelected: (ids) => { selectedClipIds = ids instanceof Set ? ids : new Set(ids); },
+    resolveSource: resolveClipSource,
+    displayName: compositeClipDisplayName,
+    frameThumb: frameThumbnailMarkup,
+    pushUndo,
+    markDirty: markCompositeDirty,
+    draw,
+    requestRedraw: () => renderFilmstrip(),
+    toolMode: () => (toolMode === "pivot" ? "select" : toolMode),
+    isComposite: () => isCompositeGroup(),
+    copy: () => copyCompositeClips(),
+    duplicate: () => duplicateSelectedCompositeClips(),
+    deleteSelected: () => {
+      if (selectedClipIds.size) {
+        pushUndo("delete composite clip");
+        deleteSelectedCompositeClips();
+      }
+    },
+    splitAtPlayhead: () => splitSelectedCompositeClips(),
+    toggleTrackHidden: (trackId) => toggleCompositeTrackHidden(trackId),
+    beginTransformDrag: (tool, event) => {
+      pushUndo(tool === "rotate" ? "rotate composite clip" : "scale composite clip");
+      drag = {
+        mode: tool === "rotate" ? "composite-rotate" : "composite-scale",
+        x: event.clientX,
+        y: event.clientY,
+        snapshots: selectedClipTransformSnapshots(),
+      };
+    },
+    showMarquee: (x0, y0, x1, y1) => showClientMarquee(x0, y0, x1, y1),
+    finishMarquee: (session) => {
+      drag = {
+        mode: "composite-timeline-marquee",
+        startX: session.startX,
+        startY: session.startY,
+        addToSelection: session.add,
+      };
+    },
+  });
+  return compositeTimelineView;
+}
+
+function renderCompositeTimeline() {
+  if (!isCompositeGroup()) return;
+  ensureCompositeTimelineView().render();
+}
+
+function compositeClipAtPoint(point, timeMs = compositePlayheadMs) {
+  const samples = activeCompositeSamples(timeMs);
+  for (let index = samples.length - 1; index >= 0; index -= 1) {
+    const sampled = samples[index];
+    const rect = clipScreenRect(sampled);
+    if (!rect) continue;
+    if (point.x >= rect.x && point.x <= rect.x + rect.width && point.y >= rect.y && point.y <= rect.y + rect.height) {
+      return sampled.clip;
+    }
+  }
+  return null;
+}
+
+function clipScreenRect(sampled) {
+  if (!sampled?.sourceGroup) return null;
+  return frameScreenRect(
+    sampled.frameIndex,
+    sampled.sourceGroup,
+    clipSourceImages(sampled.sourceGroup),
+    clipDrawOptions(sampled)
+  );
+}
+
+function rectsIntersect(left, right) {
+  if (!left || !right) return false;
+  const leftRight = (left.x ?? left.left) + (left.width ?? (left.right - left.left));
+  const leftBottom = (left.y ?? left.top) + (left.height ?? (left.bottom - left.top));
+  const rightRight = (right.x ?? right.left) + (right.width ?? (right.right - right.left));
+  const rightBottom = (right.y ?? right.top) + (right.height ?? (right.bottom - right.top));
+  const leftX = left.x ?? left.left;
+  const leftY = left.y ?? left.top;
+  const rightX = right.x ?? right.left;
+  const rightY = right.y ?? right.top;
+  return leftX < rightRight && leftRight > rightX && leftY < rightBottom && leftBottom > rightY;
+}
+
+function clientRectFromPoints(x0, y0, x1, y1) {
+  const left = Math.min(x0, x1);
+  const top = Math.min(y0, y1);
+  return {
+    left,
+    top,
+    right: Math.max(x0, x1),
+    bottom: Math.max(y0, y1),
+    x: left,
+    y: top,
+    width: Math.abs(x1 - x0),
+    height: Math.abs(y1 - y0),
+  };
+}
+
+function ensureMarqueeOverlay() {
+  let node = document.getElementById("xsxbMarqueeOverlay");
+  if (!node) {
+    node = document.createElement("div");
+    node.id = "xsxbMarqueeOverlay";
+    node.className = "xsxbMarqueeOverlay";
+    node.hidden = true;
+    document.body.appendChild(node);
+  }
+  return node;
+}
+
+function showClientMarquee(x0, y0, x1, y1) {
+  const node = ensureMarqueeOverlay();
+  const rect = clientRectFromPoints(x0, y0, x1, y1);
+  node.hidden = rect.width < 1 && rect.height < 1;
+  node.style.left = `${rect.left}px`;
+  node.style.top = `${rect.top}px`;
+  node.style.width = `${rect.width}px`;
+  node.style.height = `${rect.height}px`;
+}
+
+function hideClientMarquee() {
+  const node = document.getElementById("xsxbMarqueeOverlay");
+  if (node) node.hidden = true;
+  document.querySelectorAll(".marqueePreview").forEach((entry) => entry.classList.remove("marqueePreview"));
+}
+
+function drawSelectionRect(rect, preview = false) {
+  if (!rect || rect.width < 1 || rect.height < 1) return;
+  const dpr = devicePixelRatio;
+  ctx.save();
+  ctx.strokeStyle = preview ? "rgba(255, 213, 106, .72)" : "#ffd56a";
+  ctx.lineWidth = Math.max(2, 2 * dpr);
+  ctx.setLineDash(preview ? [4 * dpr, 4 * dpr] : [8 * dpr, 5 * dpr]);
+  ctx.strokeRect(rect.x + 1, rect.y + 1, Math.max(0, rect.width - 2), Math.max(0, rect.height - 2));
+  ctx.setLineDash([]);
+  if (!preview) {
+    ctx.fillStyle = "#ffd56a";
+    const size = 6 * dpr;
+    for (const [x, y] of [
+      [rect.x, rect.y],
+      [rect.x + rect.width, rect.y],
+      [rect.x, rect.y + rect.height],
+      [rect.x + rect.width, rect.y + rect.height],
+    ]) {
+      ctx.fillRect(x - size / 2, y - size / 2, size, size);
+    }
+  }
+  ctx.restore();
+}
+
+function clipsIntersectingScreenRect(rect, timeMs = compositePlayheadMs) {
+  const ids = new Set();
+  for (const sampled of activeCompositeSamples(timeMs)) {
+    if (rectsIntersect(clipScreenRect(sampled), rect)) ids.add(sampled.clip.id);
+  }
+  return ids;
+}
+
+function drawCompositeStage() {
+  const samples = activeCompositeSamples();
+  const previewIds = marqueePreviewClipIds;
+  for (const sampled of samples) {
+    const selected = selectedClipIds.has(sampled.clip.id) || previewIds.has(sampled.clip.id);
+    const groupImages = clipSourceImages(sampled.sourceGroup);
+    const options = clipDrawOptions(sampled);
+    drawFrameImageAttachments(sampled.frameIndex, 1, "below", sampled.sourceGroup, groupImages);
+    drawFrame(sampled.frameIndex, 1, false, sampled.sourceGroup, groupImages, options);
+    drawFrameImageAttachments(sampled.frameIndex, 1, "above", sampled.sourceGroup, groupImages);
+    if (config?.projectKind === "frame_lite") {
+      drawAttachedLayersForOwner(sampled.sourceGroup, sampled.frameIndex, 1, "front");
+    } else {
+      drawAttachedLayersForOwner(sampled.sourceGroup, sampled.frameIndex, 1, "all");
+    }
+    if (selected) drawSelectionRect(clipScreenRect(sampled), previewIds.has(sampled.clip.id) && !selectedClipIds.has(sampled.clip.id));
+  }
+  if (selectedClipIds.size) drawTransformGizmo();
+  if (compositeMarqueeRect) {
+    ctx.save();
+    ctx.strokeStyle = "rgba(255, 213, 106, .95)";
+    ctx.fillStyle = "rgba(255, 213, 106, .12)";
+    ctx.lineWidth = Math.max(1, devicePixelRatio);
+    ctx.setLineDash([6 * devicePixelRatio, 4 * devicePixelRatio]);
+    ctx.fillRect(compositeMarqueeRect.x, compositeMarqueeRect.y, compositeMarqueeRect.width, compositeMarqueeRect.height);
+    ctx.strokeRect(compositeMarqueeRect.x, compositeMarqueeRect.y, compositeMarqueeRect.width, compositeMarqueeRect.height);
+    ctx.restore();
+  }
+}
+
+function selectClipsInMarquee(rect, addToSelection = false) {
+  const found = clipsIntersectingScreenRect(rect);
+  if (addToSelection) {
+    for (const id of found) selectedClipIds.add(id);
+  } else {
+    selectedClipIds = found;
+  }
+}
+
+function finishCompositeStageMarquee(addToSelection = false) {
+  const rect = compositeMarqueeRect;
+  compositeMarqueeRect = null;
+  marqueePreviewClipIds = new Set();
+  if (!rect || (rect.width < 4 && rect.height < 4)) {
+    if (!addToSelection) selectedClipIds = new Set();
+    return;
+  }
+  selectClipsInMarquee(rect, addToSelection);
+}
+
+function ensureClipTransform(clip) {
+  if (!clip.transform) {
+    clip.transform = { offset: { x: 0, y: 0 }, scale: 1, scaleX: 1, scaleY: 1, rotation: 0 };
+  }
+  clip.transform.offset = clip.transform.offset || { x: 0, y: 0 };
+  if (!Number.isFinite(Number(clip.transform.scale))) clip.transform.scale = 1;
+  if (!Number.isFinite(Number(clip.transform.scaleX))) clip.transform.scaleX = Number(clip.transform.scale || 1);
+  if (!Number.isFinite(Number(clip.transform.scaleY))) clip.transform.scaleY = Number(clip.transform.scale || 1);
+  if (!Number.isFinite(Number(clip.transform.rotation))) clip.transform.rotation = 0;
+  return clip.transform;
+}
+
+function selectedClipTransformSnapshots() {
+  return (ensureComposition().clips || []).filter((clip) => selectedClipIds.has(clip.id)).map((clip) => {
+    const transform = ensureClipTransform(clip);
+    return {
+      id: clip.id,
+      scale: Number(transform.scale || 1),
+      scaleX: Number(transform.scaleX ?? transform.scale ?? 1),
+      scaleY: Number(transform.scaleY ?? transform.scale ?? 1),
+      rotation: Number(transform.rotation || 0),
+    };
+  });
+}
+
+function applyClipTransformSnapshots(snapshots, mutate) {
+  const clips = ensureComposition().clips || [];
+  for (const snapshot of snapshots || []) {
+    const clip = clips.find((entry) => entry.id === snapshot.id);
+    if (!clip) continue;
+    mutate(ensureClipTransform(clip), snapshot);
+  }
+  markCompositeDirty();
+}
+
+function moveSelectedClipsByScreenDelta(dx, dy) {
+  const composition = ensureComposition();
+  const scale = coordinateScreenScale();
+  const localX = dx / Math.max(0.0001, scale);
+  const localY = dy / Math.max(0.0001, scale);
+  for (const clip of composition.clips || []) {
+    if (!selectedClipIds.has(clip.id)) continue;
+    if (!clip.transform) {
+      clip.transform = { offset: { x: 0, y: 0 }, scale: 1, scaleX: 1, scaleY: 1, rotation: 0 };
+    }
+    clip.transform.offset = clip.transform.offset || { x: 0, y: 0 };
+    clip.transform.offset.x = Number(clip.transform.offset.x || 0) + localX;
+    clip.transform.offset.y = Number(clip.transform.offset.y || 0) + localY;
+  }
+  markCompositeDirty();
+}
+
+function copyCompositeClips() {
+  if (!isCompositeGroup() || !selectedClipIds.size) return false;
+  const composition = ensureComposition();
+  const clips = (composition.clips || [])
+    .filter((clip) => selectedClipIds.has(clip.id))
+    .map((clip) => compositeApi().cloneClip?.(clip) || { ...clip, transform: { ...clip.transform } });
+  if (!clips.length) return false;
+  editorClipboard = {
+    kind: "composite",
+    projectId: activeProjectId(),
+    groupUiId: currentGroup.uiId,
+    clips,
+  };
+  frameImageAttachmentClipboard = [];
+  frameImageAttachmentClipboardProjectId = "";
+  status(t("compositeCopyClips", { count: clips.length }));
+  return true;
+}
+
+function addClonedCompositeClips(sourceClips, options = {}) {
+  const payload = Array.isArray(sourceClips) ? sourceClips : [];
+  if (!isCompositeGroup() || !payload.length) return [];
+  const composition = ensureComposition();
+  const earliest = Math.min(...payload.map((clip) => Number(clip.startMs || 0)));
+  const pasted = [];
+  for (const sourceClip of payload) {
+    const source = resolveClipSource(sourceClip);
+    const track = compositeApi().addLayerTrack?.(composition, {
+      name: compositeClipDisplayName(sourceClip, source),
+    });
+    const startMs = options.keepStart
+      ? Number(sourceClip.startMs || 0)
+      : Math.max(0, compositePlayheadMs + (Number(sourceClip.startMs || 0) - earliest));
+    const clip = compositeApi().cloneClip?.(sourceClip, {
+      id: compositeApi().newId?.("clip") || `clip_${Math.random().toString(36).slice(2, 10)}`,
+      trackId: track?.id || sourceClip.trackId,
+      startMs,
+    }) || { ...sourceClip, id: `clip_${Math.random().toString(36).slice(2, 10)}`, trackId: track?.id, startMs };
+    composition.clips.push(clip);
+    pasted.push(clip.id);
+  }
+  selectedClipIds = new Set(pasted);
+  composition.durationMs = compositeDurationMs();
+  markCompositeDirty();
+  renderFilmstrip();
+  draw();
+  return pasted;
+}
+
+function pasteCompositeClips() {
+  if (!isCompositeGroup() || editorClipboard.kind !== "composite") return false;
+  const payload = Array.isArray(editorClipboard.clips) ? editorClipboard.clips : [];
+  if (!payload.length) return false;
+  pushUndo("paste composite clips");
+  const pasted = addClonedCompositeClips(payload);
+  status(t("compositePasteClips", { count: pasted.length }));
+  return pasted.length > 0;
+}
+
+function duplicateSelectedCompositeClips() {
+  if (!isCompositeGroup() || !selectedClipIds.size) return false;
+  const composition = ensureComposition();
+  const clips = (composition.clips || []).filter((clip) => selectedClipIds.has(clip.id));
+  if (!clips.length) return false;
+  pushUndo("duplicate composite clips");
+  const pasted = addClonedCompositeClips(clips, { keepStart: true });
+  status(t("compositePasteClips", { count: pasted.length }));
+  return pasted.length > 0;
+}
+
+function setSelectedCompositeHidden(hidden) {
+  if (!isCompositeGroup() || !selectedClipIds.size) return false;
+  pushUndo(hidden ? "hide composite clips" : "show composite clips");
+  const composition = ensureComposition();
+  for (const clip of composition.clips || []) {
+    if (!selectedClipIds.has(clip.id)) continue;
+    clip.hidden = hidden === true;
+  }
+  markCompositeDirty();
+  renderFilmstrip();
+  draw();
+  return true;
+}
+
+function toggleCompositeTrackHidden(trackId) {
+  if (!currentGroup || !trackId) return false;
+  const composition = currentGroup.composition || ensureComposition();
+  const track = (composition.tracks || []).find((entry) => String(entry.id) === String(trackId));
+  if (!track) return false;
+  pushUndo(track.hidden ? "show composite track" : "hide composite track");
+  track.hidden = track.hidden !== true;
+  markCompositeDirty();
+  renderFilmstrip();
+  draw();
+  return true;
+}
+
+function pruneCompositeEmptyTracks() {
+  if (!isCompositeGroup()) return;
+  compositeApi().pruneEmptyTracks?.(ensureComposition());
+}
+
+function deleteSelectedCompositeClips() {
+  if (!isCompositeGroup() || !selectedClipIds.size) return false;
+  const composition = ensureComposition();
+  composition.clips = (composition.clips || []).filter((clip) => !selectedClipIds.has(clip.id));
+  selectedClipIds = new Set();
+  pruneCompositeEmptyTracks();
+  composition.durationMs = compositeDurationMs();
+  markCompositeDirty();
+  renderFilmstrip();
+  draw();
+  return true;
+}
+
+function timelineMsFromClientX(clientX) {
+  const metrics = timelineMetrics();
+  const rect = els.filmstrip.getBoundingClientRect();
+  return Math.max(0, Math.min(metrics.duration, (clientX - rect.left - metrics.labelWidth) / metrics.pxPerMs));
+}
+
+function beginCompositeTimelinePointer(event) {
+  if (!isCompositeGroup() || event.button !== 0) return false;
+  const handle = event.target.closest?.(".compositeTimelineClipHandle");
+  const frameNode = event.target.closest?.(".compositeTimelineFrame");
+  const clipNode = event.target.closest?.(".compositeTimelineClip");
+  const ruler = event.target.closest?.(".compositeTimelineRuler");
+  const tool = toolMode === "pivot" ? "select" : toolMode;
+  const trackEye = event.target.closest?.(".compositeTimelineTrackEye");
+  if (trackEye) return false;
+  const trackHandle = event.target.closest?.(".compositeTimelineTrackHandle");
+  if (trackHandle) {
+    const trackId = trackHandle.closest(".compositeTimelineTrack")?.dataset.trackId;
+    if (!trackId) return true;
+    pushUndo("reorder composite tracks");
+    drag = { mode: "composite-track-reorder", trackId, startY: event.clientY };
+    return true;
+  }
+  if (ruler) {
+    setCompositePlayheadMs(timelineMsFromClientX(event.clientX));
+    drag = { mode: "composite-playhead" };
+    renderFilmstrip();
+    draw();
+    return true;
+  }
+  if (clipNode) {
+    const clipId = clipNode.dataset.clipId;
+    if (!event.shiftKey) selectedClipIds = new Set([clipId]);
+    else selectedClipIds.add(clipId);
+    const clip = ensureComposition().clips.find((entry) => entry.id === clipId);
+    if (!clip) return true;
+    const frameLocalMs = frameNode ? Number(frameNode.dataset.localMs || 0) : null;
+    if (handle) {
+      pushUndo("trim composite clip");
+      drag = {
+        mode: "composite-timeline-trim",
+        edge: handle.classList.contains("left") ? "left" : "right",
+        clipId,
+        startX: event.clientX,
+        startMs: Number(clip.startMs || 0),
+        sourceStartFrame: Number(clip.sourceStartFrame || 0),
+        sourceEndFrame: clip.sourceEndFrame,
+      };
+    } else if (tool === "rotate" || tool === "scale") {
+      pushUndo(tool === "rotate" ? "rotate composite clip" : "scale composite clip");
+      drag = {
+        mode: tool === "rotate" ? "composite-rotate" : "composite-scale",
+        x: event.clientX,
+        y: event.clientY,
+        snapshots: selectedClipTransformSnapshots(),
+      };
+    } else if (tool === "move") {
+      pushUndo("move composite clip");
+      drag = {
+        mode: "composite-timeline-clip",
+        clipId,
+        startX: event.clientX,
+        startY: event.clientY,
+        startMs: Number(clip.startMs || 0),
+        trackId: clip.trackId,
+      };
+    } else {
+      drag = {
+        mode: "composite-timeline-select",
+        clipId,
+        frameLocalMs,
+        startX: event.clientX,
+        startY: event.clientY,
+        addToSelection: event.shiftKey === true,
+        moved: false,
+      };
+      if (Number.isFinite(frameLocalMs)) {
+        setCompositePlayheadMs(Number(clip.startMs || 0) + frameLocalMs);
+      }
+    }
+    renderFilmstrip();
+    draw();
+    return true;
+  }
+  if (event.target.closest?.(".compositeTimelineTrack, .compositeTimelineTracks, .compositeTimelineEmpty, .compositeTimelineInner")) {
+    setCompositePlayheadMs(timelineMsFromClientX(event.clientX));
+    if (tool !== "select") {
+      renderFilmstrip();
+      draw();
+      return true;
+    }
+    drag = {
+      mode: "composite-timeline-marquee",
+      startX: event.clientX,
+      startY: event.clientY,
+      addToSelection: event.shiftKey === true,
+      moved: false,
+    };
+    showClientMarquee(event.clientX, event.clientY, event.clientX, event.clientY);
+    return true;
+  }
+  return false;
+}
+
+function previewTimelineMarquee(event) {
+  const rect = clientRectFromPoints(drag.startX, drag.startY, event.clientX, event.clientY);
+  showClientMarquee(rect.left, rect.top, rect.right, rect.bottom);
+  document.querySelectorAll(".compositeTimelineClip").forEach((node) => {
+    node.classList.toggle("marqueePreview", rectsIntersect(node.getBoundingClientRect(), rect));
+  });
+}
+
+function finishTimelineMarquee(event) {
+  const rect = clientRectFromPoints(drag.startX, drag.startY, event?.clientX ?? drag.startX, event?.clientY ?? drag.startY);
+  hideClientMarquee();
+  if (rect.width < 4 && rect.height < 4) {
+    if (!drag.addToSelection) {
+      selectedClipIds = new Set();
+      renderFilmstrip();
+      draw();
+    }
+    return;
+  }
+  const found = new Set();
+  document.querySelectorAll(".compositeTimelineClip").forEach((node) => {
+    if (rectsIntersect(node.getBoundingClientRect(), rect) && node.dataset.clipId) found.add(node.dataset.clipId);
+  });
+  if (drag.addToSelection) {
+    for (const id of found) selectedClipIds.add(id);
+  } else {
+    selectedClipIds = found;
+  }
+  renderFilmstrip();
+  draw();
+}
+
+function beginFilmstripMarquee(event) {
+  if (event.button !== 0 || isCompositeGroup() || !currentGroup) return false;
+  if (event.target.closest?.("button, input, select, .durationStep, .frameSfxBadge, .frameCopyButton, .frameReorderHandle, .attachmentThumb")) return false;
+  const startIndex = Number(event.target.closest?.(".frameStack")?.dataset.frameIndex);
+  drag = {
+    mode: "filmstrip-marquee",
+    startX: event.clientX,
+    startY: event.clientY,
+    addToSelection: event.shiftKey === true || event.ctrlKey === true || event.metaKey === true,
+    moved: false,
+    startIndex: Number.isFinite(startIndex) ? startIndex : null,
+  };
+  return true;
+}
+
+function previewFilmstripMarquee(event) {
+  const rect = clientRectFromPoints(drag.startX, drag.startY, event.clientX, event.clientY);
+  showClientMarquee(rect.left, rect.top, rect.right, rect.bottom);
+  document.querySelectorAll(`.frameStack[data-group-ui="${CSS.escape(currentGroup.uiId)}"]`).forEach((stack) => {
+    stack.classList.toggle("marqueePreview", rectsIntersect(stack.getBoundingClientRect(), rect));
+  });
+}
+
+function selectFramesInClientRect(rect, addToSelection) {
+  const stacks = [...els.filmstrip.querySelectorAll(`.frameStack[data-group-ui="${CSS.escape(currentGroup.uiId)}"]`)];
+  const indexes = stacks
+    .filter((stack) => rectsIntersect(stack.getBoundingClientRect(), rect))
+    .map((stack) => Number(stack.dataset.frameIndex))
+    .filter((index) => Number.isInteger(index));
+  if (!indexes.length) return false;
+  if (addToSelection) {
+    for (const index of indexes) selectedFrames.add(index);
+  } else {
+    selectedFrames = new Set(indexes);
+  }
+  selectedFrame = indexes.includes(selectedFrame) ? selectedFrame : indexes[0];
+  selectionAnchorFrame = selectedFrame;
+  playing = false;
+  playbackPrimaryGroup = null;
+  if (els.playPause) syncPlayPauseButton();
+  updateCanvasTitle();
+  syncFrameInputs();
+  renderFilmstrip();
+  draw();
+  return true;
+}
+
+function finishFilmstripMarquee(event) {
+  const rect = clientRectFromPoints(drag.startX, drag.startY, event?.clientX ?? drag.startX, event?.clientY ?? drag.startY);
+  hideClientMarquee();
+  if (!drag.moved || (rect.width < 6 && rect.height < 6)) {
+    if (Number.isInteger(drag.startIndex)) {
+      skipNextFilmstripClick = true;
+      selectFilmstripFrame(drag.startIndex, event);
+    }
+    return;
+  }
+  skipNextFilmstripClick = true;
+  selectFramesInClientRect(rect, drag.addToSelection);
+}
+
+function updateCompositeTimelineDrag(event) {
+  if (!drag) return;
+  if (drag.mode === "composite-playhead") {
+    setCompositePlayheadMs(timelineMsFromClientX(event.clientX));
+    renderFilmstrip();
+    draw();
+    return;
+  }
+  if (drag.mode === "composite-rotate") {
+    applyClipTransformSnapshots(drag.snapshots, (transform, snapshot) => {
+      transform.rotation = snapshot.rotation + (event.clientX - drag.x) * 0.35;
+    });
+    draw();
+    return;
+  }
+  if (drag.mode === "composite-scale") {
+    const factor = Math.max(0.05, Math.min(8, Math.exp(-(event.clientY - drag.y) / 180)));
+    applyClipTransformSnapshots(drag.snapshots, (transform, snapshot) => {
+      transform.scale = snapshot.scale * factor;
+      transform.scaleX = snapshot.scaleX * factor;
+      transform.scaleY = snapshot.scaleY * factor;
+    });
+    draw();
+    return;
+  }
+  if (drag.mode === "composite-timeline-select") {
+    if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 4) {
+      drag.mode = "composite-timeline-marquee";
+      drag.moved = true;
+      previewTimelineMarquee(event);
+    }
+    return;
+  }
+  if (drag.mode === "composite-timeline-marquee") {
+    if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 4) drag.moved = true;
+    previewTimelineMarquee(event);
+    return;
+  }
+  if (drag.mode === "filmstrip-marquee") {
+    if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 4) drag.moved = true;
+    if (drag.moved) previewFilmstripMarquee(event);
+    return;
+  }
+  if (drag.mode === "composite-track-reorder") {
+    const composition = ensureComposition();
+    const from = (composition.tracks || []).findIndex((track) => track.id === drag.trackId);
+    if (from < 0) return;
+    const rows = [...els.filmstrip.querySelectorAll(".compositeTimelineTrack")];
+    let to = from;
+    for (let index = 0; index < rows.length; index += 1) {
+      const rect = rows[index].getBoundingClientRect();
+      if (event.clientY >= rect.top && event.clientY <= rect.bottom) {
+        to = index;
+        break;
+      }
+    }
+    if (to !== from) {
+      compositeApi().reorderTracks?.(composition, from, to);
+      markCompositeDirty();
+      renderFilmstrip();
+      draw();
+    }
+    return;
+  }
+  const composition = ensureComposition();
+  const clip = composition.clips.find((entry) => entry.id === drag.clipId);
+  if (!clip) return;
+  const metrics = timelineMetrics();
+  if (drag.mode === "composite-playhead") {
+    setCompositePlayheadMs(timelineMsFromClientX(event.clientX));
+    renderFilmstrip();
+    draw();
+    return;
+  }
+  if (drag.mode === "composite-timeline-clip") {
+    const deltaMs = (event.clientX - drag.startX) / metrics.pxPerMs;
+    clip.startMs = Math.max(0, drag.startMs + deltaMs);
+    const rows = [...els.filmstrip.querySelectorAll(".compositeTimelineTrack")];
+    for (const row of rows) {
+      const rect = row.getBoundingClientRect();
+      if (event.clientY >= rect.top && event.clientY <= rect.bottom) {
+        clip.trackId = row.dataset.trackId || clip.trackId;
+        break;
+      }
+    }
+    composition.durationMs = compositeDurationMs();
+    markCompositeDirty();
+    renderFilmstrip();
+    draw();
+    return;
+  }
+  if (drag.mode === "composite-timeline-trim") {
+    const source = resolveClipSource(clip);
+    clip.startMs = drag.startMs;
+    clip.sourceStartFrame = drag.sourceStartFrame;
+    clip.sourceEndFrame = drag.sourceEndFrame;
+    compositeApi().trimClipEdge?.(clip, source, drag.edge, timelineMsFromClientX(event.clientX));
+    composition.durationMs = compositeDurationMs();
+    markCompositeDirty();
+    renderFilmstrip();
+    draw();
+  }
+}
+
+async function collectCompositeSequencesForSave() {
+  const entries = [];
+  for (const group of config?.groups || []) {
+    if (!isCompositeGroup(group)) continue;
+    const composition = compositeApi().normalizeComposition?.(group.composition) || group.composition;
+    const fps = Math.max(0.1, Number(group.speed || 12));
+    let bakedFrames = [];
+    if (config?.projectKind !== "codex_pets") {
+      const previous = currentGroup;
+      const previousPlayhead = compositePlayheadMs;
+      const previousClips = new Set(selectedClipIds);
+      try {
+        if (currentGroup?.uiId !== group.uiId) await selectGroup(group, { preserveView: true, stopPlayback: true });
+        const baked = compositeApi().bakeTimeline?.(ensureComposition(group), resolveClipSource);
+        const canvas = config?.liteSettings?.canvas || {};
+        const width = Math.min(8192, Math.max(1, Math.round(Number(canvas.width || 1024))));
+        const height = Math.min(8192, Math.max(1, Math.round(Number(canvas.height || 1024))));
+        const originPixelX = Number(canvas.originPixelX ?? width * 0.5);
+        const originPixelY = Number(canvas.originPixelY ?? height * 0.86);
+        bakedFrames = [];
+        for (const sample of baked?.samples || []) {
+          const rendered = await renderLiteExportFrame({
+            ...sample,
+            time: sample.startMs / 1000,
+            compositeTimeMs: sample.startMs + sample.durationMs / 2,
+            frameIndex: 0,
+          }, {
+            allowProjectExport: true,
+            width,
+            height,
+            originPixelX,
+            originPixelY,
+            pixelScale: 1,
+            excludeSceneScale: true,
+          });
+          const data = typeof rendered === "string" ? rendered : rendered?.data || rendered?.dataUrl;
+          if (!data) continue;
+          bakedFrames.push({
+            name: `frame_${String(sample.index + 1).padStart(4, "0")}.png`,
+            data,
+            durationMs: sample.durationMs,
+          });
+        }
+      } finally {
+        compositePlayheadMs = previousPlayhead;
+        selectedClipIds = previousClips;
+        if (previous && previous.uiId !== currentGroup?.uiId) {
+          await selectGroup(previous, { preserveView: true, stopPlayback: true });
+        }
+      }
+    }
+    entries.push({
+      profileId: group.profileId,
+      animationId: group.animationId || sequenceAnimationId(group),
+      composition,
+      fps,
+      bakedFrames,
+    });
+  }
+  return entries;
 }
 
 function dropBeforeIndexToMoveIndex(fromIndex, dropBefore, length) {
@@ -4511,17 +7116,13 @@ async function editSequenceFrames(action, { frameIndex, toIndex, group = current
     throw new Error(errorPayload.error || res.statusText);
   }
   const result = await res.json().catch(() => ({}));
-  await loadConfig();
-  const editedGroup = config.groups.find((entry) => (
-    entry.profileId === groupIdentity.profileId
-    && String(entry.runtimeAnimation || entry.name || "") === groupIdentity.runtimeAnimation
-  )) || config.groups.find((entry) => entry.profileId === groupIdentity.profileId && entry.name === groupIdentity.name);
-  if (editedGroup) {
-    await selectGroup(editedGroup, {
-      frameIndex: Number(result.frameIndex ?? frameIndex ?? 0),
-      preserveView: true,
-    });
-  }
+  await loadConfig({
+    reuseAudio: true,
+    skipChrome: true,
+    skipPreload: true,
+    keepGroup: groupIdentity,
+    frameIndex: Number(result.frameIndex ?? frameIndex ?? 0),
+  });
   return result;
 }
 
@@ -4595,22 +7196,18 @@ function renderFilmstripGroup(group, label) {
     const sourceLabel = Array.isArray(group.sourceFrameIndices) && group.sourceFrameIndices.length ? ` (src ${sourceFrameIndex(index, group) + 1})` : "";
     item.title = `${label}${index + 1} - ${frame.name}${sourceLabel}`;
     const canAdjustDuration = isCurrent && canEditFramePlayback(group) && !usesAttachedPlaybackTiming(group);
-    const canDuplicate = isCurrent && config?.projectKind !== "codex_pets" && Boolean(group.profileId);
     const canEditFrames = canEditSequenceFrames(group);
-    const canDeleteFrame = canEditFrames && group.frames.length > 1;
     const audioBadge = audioBinding
       ? `<span class="frameSfxBadge" data-action="delete-sfx" role="button" tabindex="0" title="${escapeHtml(audioBinding.name || "audio")}"><span class="frameSfxSpeaker" aria-hidden="true">&#128266;</span><span class="frameSfxRemove" aria-hidden="true">x</span></span>`
       : "";
     item.innerHTML = `
       ${audioBadge}
-      ${canDeleteFrame ? `<span class="frameDeleteButton" data-action="delete-frame" role="button" tabindex="0" title="删除此帧">×</span>` : ""}
       ${frameThumbnailMarkup(frame)}
       <span class="thumbLabel">${label}${index + 1}</span>
       <div class="thumbDuration">
         <button class="durationStep" data-delta="${-FRAME_DURATION_STEP_MS}" ${canAdjustDuration ? "" : "disabled"} title="-${FRAME_DURATION_STEP_MS}ms">-</button>
         <b>${frameDurationMsLabel(index, group)}</b>
         <button class="durationStep" data-delta="${FRAME_DURATION_STEP_MS}" ${canAdjustDuration ? "" : "disabled"} title="+${FRAME_DURATION_STEP_MS}ms">+</button>
-        <span class="frameCopyButton ${canDuplicate ? "" : "disabled"}" data-action="duplicate-frame" role="button" tabindex="${canDuplicate ? "0" : "-1"}" aria-disabled="${canDuplicate ? "false" : "true"}" title="复制本帧并插入右侧">⧉</span>
         <span class="frameCopyButton ${canEditFrames ? "" : "disabled"}" data-action="insert-blank-frame" role="button" tabindex="${canEditFrames ? "0" : "-1"}" aria-disabled="${canEditFrames ? "false" : "true"}" title="在右侧插入空白帧">+</span>
       </div>`;
     const sfxBadge = item.querySelector(".frameSfxBadge");
@@ -4698,23 +7295,6 @@ function renderFilmstripGroup(group, label) {
         adjustFrameDurationMs(index, Number(button.dataset.delta || 0));
       });
     });
-    const copyButton = item.querySelector('[data-action="duplicate-frame"]');
-    if (copyButton && canDuplicate) {
-      const duplicate = async (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        try {
-          await duplicateFrameAfter(index, group);
-        } catch (error) {
-          status(`复制帧失败：${error.message}`);
-        }
-      };
-      copyButton.addEventListener("click", duplicate);
-      copyButton.addEventListener("keydown", async (event) => {
-        if (event.key !== "Enter" && event.key !== " ") return;
-        await duplicate(event);
-      });
-    }
     const blankButton = item.querySelector('[data-action="insert-blank-frame"]');
     if (blankButton && canEditFrames) {
       const insertBlank = async (event) => {
@@ -4732,29 +7312,17 @@ function renderFilmstripGroup(group, label) {
         await insertBlank(event);
       });
     }
-    const deleteButton = item.querySelector('[data-action="delete-frame"]');
-    if (deleteButton && canDeleteFrame) {
-      const removeFrame = async (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        try {
-          await deleteSequenceFrame(index, group);
-        } catch (error) {
-          status(`删除帧失败：${error.message}`);
-        }
-      };
-      deleteButton.addEventListener("click", removeFrame);
-      deleteButton.addEventListener("keydown", async (event) => {
-        if (event.key !== "Enter" && event.key !== " ") return;
-        await removeFrame(event);
-      });
-    }
     item.addEventListener("click", async (event) => {
+      if (skipNextFilmstripClick) {
+        skipNextFilmstripClick = false;
+        event.preventDefault();
+        return;
+      }
       if (group.uiId !== currentGroup.uiId) {
         const previousGroup = currentGroup;
         playing = false;
         playbackPrimaryGroup = null;
-        if (els.playPause) els.playPause.textContent = t("play");
+        if (els.playPause) syncPlayPauseButton();
         if (els.chainGroupSelect) els.chainGroupSelect.value = previousGroup.uiId;
         await selectGroup(group, { frameIndex: index, preserveView: true, stopPlayback: false });
         return;
@@ -4794,12 +7362,54 @@ function zoomViewAt(event) {
   draw();
 }
 
-function resizeCanvas() {
+function resizeCanvas(options = {}) {
   const rect = els.stage.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
   els.stage.width = Math.max(640, Math.floor(rect.width * devicePixelRatio));
   els.stage.height = Math.max(420, Math.floor(rect.height * devicePixelRatio));
-  fitView();
+  if (!options.preserveView) fitView();
   draw();
+}
+
+function setupWorkspaceSplits() {
+  const workspace = els.workspace;
+  if (!workspace) return;
+  const clampFilmstrip = (value) => Math.max(140, Math.min(Math.max(180, window.innerHeight - 220), Math.round(value)));
+  const apply = (filmstripHeight) => {
+    workspace.style.setProperty("--filmstrip-h", `${clampFilmstrip(filmstripHeight)}px`);
+  };
+  let filmstripHeight = clampFilmstrip(Number(localStorage.getItem(FILMSTRIP_HEIGHT_KEY)) || 248);
+  apply(filmstripHeight);
+
+  function bindGutter(gutter) {
+    if (!gutter) return;
+    gutter.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      gutter.classList.add("dragging");
+      try { gutter.setPointerCapture(event.pointerId); } catch (_error) {}
+      const start = event.clientY;
+      const startFilmstrip = filmstripHeight;
+      const onMove = (moveEvent) => {
+        filmstripHeight = clampFilmstrip(startFilmstrip + (start - moveEvent.clientY));
+        apply(filmstripHeight);
+        resizeCanvas({ preserveView: true });
+      };
+      const onUp = () => {
+        gutter.classList.remove("dragging");
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        window.removeEventListener("pointercancel", onUp);
+        localStorage.setItem(FILMSTRIP_HEIGHT_KEY, String(filmstripHeight));
+        resizeCanvas({ preserveView: true });
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onUp);
+    });
+  }
+
+  bindGutter(els.splitFilmstrip);
 }
 
 function drawGrid() {
@@ -5525,6 +8135,20 @@ function hitTestDirectManipulationAttachment(event) {
   return pointInAttachmentRect(stagePoint(event), rect, padding) ? attachment : null;
 }
 
+function hitTestAnyFrameAttachment(event) {
+  if (frameAttachmentEditingLocked() || !currentGroup) return null;
+  const point = stagePoint(event);
+  const padding = Math.max(6 * devicePixelRatio, 6);
+  const attachments = frameImageAttachmentsForFrame(selectedFrame, currentGroup)
+    .slice()
+    .sort((left, right) => attachmentLayerOrder(right) - attachmentLayerOrder(left));
+  for (const attachment of attachments) {
+    const rect = frameImageAttachmentScreenRect(attachment, selectedFrame, currentGroup, images);
+    if (rect && pointInAttachmentRect(point, rect, padding)) return attachment;
+  }
+  return null;
+}
+
 function attachmentOffsetDeltaFromClientDelta(dx, dy, attachment = selectedFrameAttachment()) {
   const index = attachmentFrameIndex(attachment, currentGroup);
   const ownerTransform = frameTransform(index, currentGroup);
@@ -5725,6 +8349,16 @@ function liteFrameAtTime(timeSeconds, group = currentGroup) {
 }
 
 function liteExportTimeline() {
+  if (isCompositeGroup()) {
+    const baked = compositeApi().bakeTimeline?.(ensureComposition(), resolveClipSource);
+    return (baked?.samples || []).map((sample) => ({
+      index: sample.index,
+      time: sample.startMs / 1000,
+      durationMs: sample.durationMs,
+      frameIndex: 0,
+      compositeTimeMs: sample.startMs + sample.durationMs / 2,
+    }));
+  }
   if (!currentGroup?.frames?.length) return [];
   const playableFrames = [];
   for (let frameIndex = 0; frameIndex < currentGroup.frames.length; frameIndex += 1) {
@@ -5781,7 +8415,9 @@ function liteExportAudio(samples = null) {
 }
 
 async function renderLiteExportFrame(sample, options = {}) {
-  if ((config?.projectKind !== "frame_lite" && options.allowProjectExport !== true) || !currentGroup?.frames?.length) {
+  const compositeExport = isCompositeGroup();
+  if ((config?.projectKind !== "frame_lite" && options.allowProjectExport !== true)
+    || (!compositeExport && !currentGroup?.frames?.length)) {
     throw new Error("Frame export requires an active sequence.");
   }
   const width = Math.min(8192, Math.max(1, Math.round(Number(options.width || 1024))));
@@ -5814,6 +8450,9 @@ async function renderLiteExportFrame(sample, options = {}) {
     selectedFrame = frameIndex;
     selectedFrames = new Set([frameIndex]);
     liteExportTime = Math.max(0, Number(sample?.time || 0));
+    if (compositeExport) {
+      setCompositePlayheadMs(Number(sample?.compositeTimeMs ?? liteExportTime * 1000));
+    }
     if (attackTrailEditor) {
       attackTrailEditor.enabled = true;
       if (config?.projectKind === "frame_lite" || options.bakedComposite === true) {
@@ -5834,10 +8473,14 @@ async function renderLiteExportFrame(sample, options = {}) {
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
     ctx.clearRect(0, 0, width, height);
-    const mainFrameRect = currentFrameRect(frameIndex);
-    drawLiteExportComposite(frameIndex, {
-      excludeMarkerOnlyAttachments: options.bakedComposite === true,
-    });
+    const mainFrameRect = compositeExport ? null : currentFrameRect(frameIndex);
+    if (compositeExport) {
+      drawCompositeStage();
+    } else {
+      drawLiteExportComposite(frameIndex, {
+        excludeMarkerOnlyAttachments: options.bakedComposite === true,
+      });
+    }
     if (options.measureOnly === true || options.crop === true) {
       const pixels = new Uint32Array(ctx.getImageData(0, 0, width, height).data.buffer);
       let left = width;
@@ -5991,6 +8634,12 @@ function canvasHintLines() {
       active: referenceFrameHiddenByKey,
     });
   }
+  if (isCompositeGroup()) {
+    lines.push({
+      text: t("compositeMarqueeHint"),
+      active: toolMode === "select",
+    });
+  }
   if (showBoxes && canEditBoxes()) {
     lines.push({
       text: t("boxEditHint"),
@@ -6031,7 +8680,14 @@ function drawCanvasHints() {
 function draw() {
   ctx.clearRect(0, 0, els.stage.width, els.stage.height);
   drawGrid();
-  if (!currentGroup || !images.length) {
+  if (!currentGroup || (!images.length && !isCompositeGroup())) {
+    updateCoordHud();
+    return;
+  }
+  if (isCompositeGroup()) {
+    drawCompositeStage();
+    drawCoordinateMarkers();
+    drawCanvasHints();
     updateCoordHud();
     return;
   }
@@ -6057,6 +8713,7 @@ function draw() {
   drawBoxes();
   attackTrailEditor?.drawGuides();
   drawCoordinateMarkers();
+  drawTransformGizmo();
   drawCanvasHints();
   updateCoordHud();
 }
@@ -6257,6 +8914,25 @@ function rebaseGroupOriginToZero() {
   status(t("rebaseGroupOriginDone"));
 }
 
+function alignTransformPivotToOrigin() {
+  if (!currentGroup || !canEditGroupTransform()) return;
+  if (!groupOriginIsZero()) {
+    status(t("alignTransformPivotNeedRebase"));
+    return;
+  }
+  const current = authoredTransformPivot() || { x: Number.NaN, y: Number.NaN };
+  if (offsetsNearlyEqual(current, { x: 0, y: 0 })) {
+    status(t("alignTransformPivotAlready"));
+    return;
+  }
+  pushUndo("align transform pivot");
+  setAuthoredTransformPivot({ x: 0, y: 0 });
+  markDirty();
+  syncAdjustmentInputs();
+  draw();
+  status(t("alignTransformPivotDone"));
+}
+
 function updateBaseFromInputs(transform = transformFromAdjustmentInputs()) {
   if (!canEditGroupTransform()) return;
   const store = valueStore();
@@ -6339,11 +9015,13 @@ function updateAdjustmentFromInputs(editedInput = null) {
 }
 
 function animate(time) {
-  if (!currentGroup || !images.length || playbackSwitching) {
+  if (!currentGroup || playbackSwitching || (!images.length && !isCompositeGroup())) {
     requestAnimationFrame(animate);
     return;
   }
-  const interval = (1000 / groupPlaybackFps(currentGroup)) * Math.max(0.001, effectiveFrameDurationMultiplier(selectedFrame, currentGroup));
+  const interval = isCompositeGroup()
+    ? 1000 / 60
+    : (1000 / groupPlaybackFps(currentGroup)) * Math.max(0.001, effectiveFrameDurationMultiplier(selectedFrame, currentGroup));
   let advanced = false;
   if (playing && time - lastPlay > interval) {
     lastPlay = time;
@@ -6383,6 +9061,7 @@ async function ensureCollisionBoxOverridesForSave(changedGroupKeys = null) {
   if (!Array.isArray(config?.groups)) return;
   for (const group of config.groups) {
     if (changedGroupKeys && !changedGroupKeys.has(saveScopeGroupKey(group))) continue;
+    if (isCompositeGroup(group)) continue;
     if (!canEditBox("collisionbox", group) || !Array.isArray(group.frames) || !group.frames.length) continue;
     const groupImages = await loadImagesForBoxGeneration(group);
     const store = boxOverrideStore(group);
@@ -6474,6 +9153,15 @@ async function switchPlaybackGroup(group, frameIndex) {
 }
 
 function advancePlayback() {
+  if (isCompositeGroup()) {
+    const duration = compositeDurationMs();
+    const step = Math.max(1, performance.now() && lastPlay ? 1000 / 60 : 16);
+    setCompositePlayheadMs(compositePlayheadMs + step);
+    if (compositePlayheadMs >= duration) setCompositePlayheadMs(0);
+    compositeTimelineView?.syncPlayhead?.();
+    draw();
+    return;
+  }
   const primary = playbackPrimaryGroup || currentGroup;
   const secondary = playbackSecondaryGroup;
   const next = nextPlayableFrameInGroup(currentGroup, selectedFrame);
@@ -6565,7 +9253,7 @@ function unityBakedFrameIndexesForGroup(group, attachments, attackTrails) {
 async function collectUnityBakedFramesForSave(attachments, attackTrails, changedGroupKeys = null) {
   if (config?.projectEngine !== "unity" || !currentGroup) return [];
   const jobs = (config?.groups || [])
-    .filter((group) => group?.profileId && group?.type !== "vfx" && group?.frames?.length)
+    .filter((group) => group?.profileId && group?.type !== "vfx" && group?.frames?.length && !isCompositeGroup(group))
     .filter((group) => !changedGroupKeys || changedGroupKeys.has(saveScopeGroupKey(group)))
     .map((group) => ({ group, indexes: unityBakedFrameIndexesForGroup(group, attachments, attackTrails) }))
     .filter((job) => job.indexes.length > 0);
@@ -6689,6 +9377,7 @@ async function save() {
       attackTrailsForSave,
       changedGroupKeysForSave
     );
+    const compositeSequencesForSave = config?.projectKind === "codex_pets" ? [] : await collectCompositeSequencesForSave();
     const codexPetExportsForSave = await collectCodexPetExportsForSave();
     const hadReadOnlyPetEdits = config?.projectKind === "codex_pets"
       && [...dirtyPetProfileIds].some((profileId) => !codexPetProfile(profileId)?.pet?.writable);
@@ -6704,6 +9393,7 @@ async function save() {
         frame_image_attachments: frameImageAttachmentsForSave,
         attack_trails: attackTrailsForSave,
         unity_baked_frames: config?.projectEngine === "unity" ? unityBakedFramesForSave : undefined,
+        composite_sequences: compositeSequencesForSave,
         changed_groups: config?.projectEngine === "unity" ? [...changedGroupKeysForSave] : undefined,
         frame_visual_overrides: frameOverrides,
         attack_vfx_frame_overrides: vfxFrameOverrides,
@@ -6773,6 +9463,11 @@ async function save() {
   }
 }
 
+function collectGroupPivotValue(store, group, result) {
+  const key = groupTransformPivotKey(group);
+  if (store[key] != null) result[key] = store[key];
+}
+
 function collectTuningValues() {
   const result = {};
   const seenProfiles = new Set();
@@ -6789,6 +9484,7 @@ function collectTuningValues() {
     if (values[group.offset] != null) result[group.offset] = values[group.offset];
     if (group.rotation && values[group.rotation] != null) result[group.rotation] = values[group.rotation];
     if (group.anchor && values[group.anchor] != null) result[group.anchor] = values[group.anchor];
+    collectGroupPivotValue(values, group, result);
   }
   return result;
 }
@@ -6799,6 +9495,7 @@ function collectBossTuningValues() {
     if (bossValues[group.scale] != null) result[group.scale] = bossValues[group.scale];
     if (group.scaleVector && bossValues[group.scaleVector] != null) result[group.scaleVector] = bossValues[group.scaleVector];
     if (bossValues[group.offset] != null) result[group.offset] = bossValues[group.offset];
+    collectGroupPivotValue(bossValues, group, result);
   }
   return result;
 }
@@ -6809,6 +9506,7 @@ function collectAct2StatueBossTuningValues() {
     if (act2StatueBossValues[group.scale] != null) result[group.scale] = act2StatueBossValues[group.scale];
     if (group.scaleVector && act2StatueBossValues[group.scaleVector] != null) result[group.scaleVector] = act2StatueBossValues[group.scaleVector];
     if (act2StatueBossValues[group.offset] != null) result[group.offset] = act2StatueBossValues[group.offset];
+    collectGroupPivotValue(act2StatueBossValues, group, result);
   }
   return result;
 }
@@ -6819,6 +9517,7 @@ function collectHuangXianTuningValues() {
     if (huangXianValues[group.scale] != null) result[group.scale] = huangXianValues[group.scale];
     if (group.scaleVector && huangXianValues[group.scaleVector] != null) result[group.scaleVector] = huangXianValues[group.scaleVector];
     if (huangXianValues[group.offset] != null) result[group.offset] = huangXianValues[group.offset];
+    collectGroupPivotValue(huangXianValues, group, result);
   }
   return result;
 }
@@ -6830,6 +9529,7 @@ function collectSoulTuningValues() {
     if (group.scaleVector && soulValues[group.scaleVector] != null) result[group.scaleVector] = soulValues[group.scaleVector];
     if (soulValues[group.offset] != null) result[group.offset] = soulValues[group.offset];
     if (group.anchor && soulValues[group.anchor] != null) result[group.anchor] = soulValues[group.anchor];
+    collectGroupPivotValue(soulValues, group, result);
   }
   return result;
 }
@@ -6840,6 +9540,7 @@ function collectYechengPropTuningValues() {
     if (yechengPropValues[group.scale] != null) result[group.scale] = yechengPropValues[group.scale];
     if (group.scaleVector && yechengPropValues[group.scaleVector] != null) result[group.scaleVector] = yechengPropValues[group.scaleVector];
     if (yechengPropValues[group.offset] != null) result[group.offset] = yechengPropValues[group.offset];
+    collectGroupPivotValue(yechengPropValues, group, result);
   }
   return result;
 }
@@ -6889,6 +9590,161 @@ function importCodexPetFromFile() {
 els.projectSelect.addEventListener("change", () => {
   activateProject(els.projectSelect.value).catch((error) => status(t("projectSwitchFailed", { message: error.message })));
 });
+if (els.openProject) {
+  els.openProject.addEventListener("click", () => {
+    openFolderBrowser(config?.projectKind === "frame_lite" ? "lite" : "full").catch((error) => status(error.message));
+  });
+}
+if (els.newLiteProject) {
+  els.newLiteProject.addEventListener("click", () => {
+    createLiteProject().catch((error) => status(error.message));
+  });
+}
+if (els.folderBrowserCancel) {
+  els.folderBrowserCancel.addEventListener("click", () => els.folderBrowserDialog?.close());
+}
+if (els.folderBrowserPath) {
+  els.folderBrowserPath.addEventListener("change", () => {
+    const folderPath = String(els.folderBrowserPath.value || "").trim();
+    loadFolderListing(folderPath).catch((error) => status(error.message));
+  });
+}
+if (els.folderBrowserUp) {
+  els.folderBrowserUp.addEventListener("click", async () => {
+    const current = els.folderBrowserPath?.value || "";
+    const listing = await listFolders(current);
+    await loadFolderListing(listing.parent || "");
+  });
+}
+if (els.folderBrowserForm) {
+  els.folderBrowserForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const folderPath = String(els.folderBrowserPath?.value || "").trim();
+    if (!folderPath) return;
+    submitOpenedFolder(folderPath).catch((error) => status(error.message));
+  });
+}
+if (els.photopeaEdit) els.photopeaEdit.addEventListener("click", () => openPhotopeaEditor());
+if (els.photopeaCancel) els.photopeaCancel.addEventListener("click", () => closePhotopeaEditor());
+if (els.photopeaWriteBack) {
+  els.photopeaWriteBack.addEventListener("click", () => {
+    els.photopeaWriteBack.disabled = true;
+    writePhotopeaLayersBack()
+      .then(() => closePhotopeaEditor())
+      .catch((error) => {
+        els.photopeaWriteBack.disabled = false;
+        els.photopeaWriteBack.textContent = t("photopeaWriteBack");
+        status(t("photopeaFailed", { message: error.message }));
+      });
+  });
+}
+for (const button of els.editorModeButtons || []) {
+  button.addEventListener("click", () => setEditorMode(button.dataset.editorMode));
+}
+for (const button of toolModeButtons()) {
+  button?.addEventListener("click", () => setToolMode(button.dataset.toolMode));
+}
+document.addEventListener("contextmenu", (event) => {
+  if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
+  if (event.target instanceof HTMLSelectElement) return;
+  if (event.target.closest?.(".folderBrowserDialog, .photopeaDialog")) {
+    event.preventDefault();
+    return;
+  }
+  const filmstripCard = event.target.closest?.("#filmstrip .frameStack");
+  const compositeClipNode = event.target.closest?.("#filmstrip .compositeTimelineClip");
+  const compositeTrack = event.target.closest?.("#filmstrip .compositeTimelineTrack, #filmstrip .compositeTimelineEmpty, #filmstrip .compositeTimelineInner");
+  if (compositeClipNode || (compositeTrack && isCompositeGroup())) {
+    if (compositeClipNode?.dataset.clipId) {
+      const clipId = compositeClipNode.dataset.clipId;
+      if (!selectedClipIds.has(clipId)) selectedClipIds = new Set([clipId]);
+      renderFilmstrip();
+      draw();
+    }
+    showContextMenu(event, contextMenuItemsForSelection());
+    return;
+  }
+  if (filmstripCard && currentGroup) {
+    const frameIndex = Number(filmstripCard.dataset.frameIndex);
+    const attachmentId = event.target.closest?.(".attachmentThumb")?.dataset.attachmentId || "";
+    if (Number.isFinite(frameIndex)) {
+      setSingleFrameSelection(frameIndex, currentGroup);
+      const attachment = attachmentId ? frameImageAttachments.find((entry) => entry.id === attachmentId) : null;
+      if (attachment) activateFrameAttachmentForEditing(attachment);
+      else clearFrameAttachmentSelection();
+      renderFilmstrip();
+      draw();
+    }
+    showContextMenu(event, contextMenuItemsForSelection());
+    return;
+  }
+  if (event.target === els.stage || event.target.closest?.("#stage")) {
+    showContextMenu(event, contextMenuItemsForSelection());
+    return;
+  }
+  if (event.target.closest?.("main.app") && !event.target.closest?.("input, textarea, select")) {
+    event.preventDefault();
+  }
+});
+if (els.contextMenu) {
+  els.contextMenu.addEventListener("click", (event) => {
+    const action = event.target.closest("[data-action]")?.dataset.action;
+    if (!action) return;
+    event.preventDefault();
+    runContextMenuAction(action);
+  });
+}
+document.addEventListener("pointerdown", (event) => {
+  if (!els.contextMenu || els.contextMenu.hidden) return;
+  if (els.contextMenu.contains(event.target)) return;
+  hideContextMenu();
+});
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") hideContextMenu();
+}, true);
+els.stage.addEventListener("mousedown", (event) => {
+  if (event.button === 1) event.preventDefault();
+});
+els.stage.addEventListener("auxclick", (event) => {
+  if (event.button === 1) event.preventDefault();
+});
+if (els.filmstrip) {
+  els.filmstrip.addEventListener("mousedown", (event) => {
+    if (event.button === 1) event.preventDefault();
+  });
+  els.filmstrip.addEventListener("pointerdown", (event) => {
+    if (event.target.closest?.(".compositeTimelineTrackEye, .ocToolbar, .ocTool, .ocZoomSlider")) return;
+    if (isCompositeGroup() && ensureCompositeTimelineView().onPointerDown(event)) {
+      els.filmstrip.setPointerCapture?.(event.pointerId);
+      event.preventDefault();
+      return;
+    }
+    if (beginCompositeTimelinePointer(event) || beginFilmstripMarquee(event)) {
+      els.filmstrip.setPointerCapture?.(event.pointerId);
+      event.preventDefault();
+    }
+  });
+  els.filmstrip.addEventListener("click", (event) => {
+    const from = event.target instanceof Element ? event.target : event.target?.parentElement;
+    const eye = from?.closest?.(".compositeTimelineTrackEye");
+    if (!eye || !isCompositeGroup()) return;
+    event.preventDefault();
+    event.stopPropagation();
+    toggleCompositeTrackHidden(eye.closest(".compositeTimelineTrack")?.dataset.trackId);
+  });
+  els.filmstrip.addEventListener("pointermove", (event) => {
+    if (isCompositeGroup() && compositeTimelineView) compositeTimelineView.onPointerMove(event);
+    if (String(drag?.mode || "").startsWith("composite-") || drag?.mode === "filmstrip-marquee") {
+      updateCompositeTimelineDrag(event);
+    }
+  });
+  els.filmstrip.addEventListener("pointerup", (event) => {
+    if (isCompositeGroup() && compositeTimelineView) compositeTimelineView.onPointerUp(event);
+    if (String(drag?.mode || "").startsWith("composite-") || drag?.mode === "filmstrip-marquee") {
+      endStagePointerDrag(event);
+    }
+  });
+}
 els.refreshProject.addEventListener("click", () => {
   imageCache.clear();
   loadConfig().then(resizeCanvas).catch((error) => status(t("projectRefreshFailed", { message: error.message })));
@@ -6937,6 +9793,53 @@ if (els.sceneScale) {
   els.sceneScale.addEventListener("change", syncSceneInputs);
 }
 els.groupSelect.addEventListener("change", () => selectGroup(config.groups.find((group) => group.uiId === els.groupSelect.value)));
+if (els.createCompositeFromCurrent) {
+  els.createCompositeFromCurrent.addEventListener("click", () => createCompositeSequence(true).catch((error) => status(error.message)));
+}
+if (els.createCompositeEmpty) {
+  els.createCompositeEmpty.addEventListener("click", () => createCompositeSequence(false).catch((error) => status(error.message)));
+}
+if (els.compositeAddClipSelect) {
+  els.compositeAddClipSelect.addEventListener("change", async () => {
+    const uiId = els.compositeAddClipSelect.value;
+    if (!uiId) return;
+    const source = (config?.groups || []).find((group) => group.uiId === uiId);
+    els.compositeAddClipSelect.value = "";
+    if (!source) return;
+    pushUndo("add composite clip");
+    addClipFromGroup(source);
+    await loadCompositeSourceImages(currentGroup);
+    renderFilmstrip();
+    draw();
+    status(t("compositeClipAdded", { name: compositeClipDisplayName({ source: { profileId: source.profileId, animationId: source.animationId } }, source) }));
+  });
+}
+if (els.compositeImportInput) {
+  els.compositeImportInput.addEventListener("change", async () => {
+    const files = Array.from(els.compositeImportInput.files || []);
+    els.compositeImportInput.value = "";
+    if (!files.length) return;
+    await importPngsAsCompositeClip(files).catch((error) => status(error.message));
+  });
+}
+if (els.stage) {
+  for (const eventName of ["dragenter", "dragover"]) {
+    els.stage.addEventListener(eventName, (event) => {
+      if (!isCompositeGroup() || config?.projectKind === "codex_pets") return;
+      const items = Array.from(event.dataTransfer?.items || []);
+      if (!items.some((entry) => String(entry.type || "").startsWith("image/") || entry.kind === "file")) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+    });
+  }
+  els.stage.addEventListener("drop", async (event) => {
+    if (!isCompositeGroup() || config?.projectKind === "codex_pets") return;
+    const imageFiles = imageFilesFromList(event.dataTransfer?.files);
+    if (!imageFiles.length) return;
+    event.preventDefault();
+    await importPngsAsCompositeClip(imageFiles).catch((error) => status(error.message));
+  });
+}
 els.profileSelect.addEventListener("change", () => {
   selectedProfileId = els.profileSelect.value || "all";
   localStorage.setItem("animationTuner.profile", selectedProfileId);
@@ -7199,7 +10102,7 @@ function removeFrameImageAttachment(attachmentId) {
     return;
   }
   const attachment = frameImageAttachments.find((entry) => entry.id === attachmentId);
-  if (!attachment || !window.confirm(t("frameAttachmentDeleteConfirm"))) return;
+  if (!attachment) return;
   pushUndo("remove attached image");
   frameImageAttachments = frameImageAttachments.filter((entry) => entry.id !== attachmentId);
   if (selectedAttachmentId === attachmentId) clearSelectedAttachment();
@@ -7547,6 +10450,12 @@ if (els.rebaseGroupOrigin) {
   });
 }
 
+if (els.alignTransformPivot) {
+  els.alignTransformPivot.addEventListener("click", () => {
+    alignTransformPivotToOrigin();
+  });
+}
+
 if (els.undo) els.undo.addEventListener("click", undo);
 if (els.undoTop) els.undoTop.addEventListener("click", undo);
 if (els.redoTop) els.redoTop.addEventListener("click", redo);
@@ -7602,7 +10511,7 @@ if (els.playPause) {
       playbackPrimaryGroup = null;
       playbackSecondaryGroup = null;
     }
-    els.playPause.textContent = playing ? t("pause") : t("play");
+    syncPlayPauseButton();
     syncFrameInputs();
     renderFilmstrip();
     draw();
@@ -7708,6 +10617,10 @@ if (els.filmstrip) {
     if (!imageFiles.length) return;
     event.preventDefault();
     event.stopPropagation();
+    if (isCompositeGroup()) {
+      await importPngsAsCompositeClip(imageFiles, { startMs: timelineMsFromClientX(event.clientX) });
+      return;
+    }
     if (frameAttachmentEditingLocked()) {
       status(t("frameAttachmentTrailLocked"));
       return;
@@ -7739,14 +10652,130 @@ for (const input of [els.rootMotionX, els.rootMotionY].filter(Boolean)) {
   input.addEventListener("input", updateGroupPlaybackFromInputs);
 }
 
+function endStagePointerDrag(event) {
+  if (endStagePointerDrag.busy) return;
+  endStagePointerDrag.busy = true;
+  try {
+    attackTrailEditor?.pointerUp();
+    const current = drag;
+    if (current?.mode === "composite-marquee") {
+      finishCompositeStageMarquee(current.addToSelection === true);
+      renderFilmstrip();
+      draw();
+    } else if (current?.mode === "composite-timeline-marquee") {
+      finishTimelineMarquee(event);
+    } else if (current?.mode === "filmstrip-marquee") {
+      finishFilmstripMarquee(event);
+    } else if (current?.mode === "composite-timeline-clip" || current?.mode === "composite-track-reorder") {
+      pruneCompositeEmptyTracks();
+      if (isCompositeGroup()) {
+        ensureComposition().durationMs = compositeDurationMs();
+        renderFilmstrip();
+        draw();
+      }
+    } else if (current?.mode?.startsWith("gizmo-") && !current.attachmentId) {
+      endStepAdjustmentEdit();
+    }
+    drag = null;
+    hideClientMarquee();
+    compositeMarqueeRect = null;
+    marqueePreviewClipIds = new Set();
+    els.stage.classList.remove("dragging", "panning");
+    updateCoordHud();
+  } finally {
+    endStagePointerDrag.busy = false;
+  }
+}
+
 els.stage.addEventListener("pointerdown", (event) => {
   pointerStagePoint = stagePoint(event);
   updateCoordHud();
+  hideContextMenu();
   const beginDrag = (nextDrag) => {
     els.stage.setPointerCapture(event.pointerId);
     els.stage.classList.add("dragging");
+    if (nextDrag.mode === "pan") els.stage.classList.add("panning");
     drag = nextDrag;
   };
+  if (event.button === 1) {
+    event.preventDefault();
+    beginDrag({ mode: "pan", x: event.clientX, y: event.clientY, viewX: view.x, viewY: view.y });
+    return;
+  }
+  if (event.button === 2) {
+    selectUnderPointer(event);
+    return;
+  }
+  if (event.button !== 0) return;
+  if (isCompositeGroup()) {
+    const point = stagePoint(event);
+    const hit = compositeClipAtPoint(point);
+    if (selectedClipIds.size && (toolMode === "move" || toolMode === "rotate" || toolMode === "scale") && hitTestTransformGizmo(event)) {
+      const undoLabel = toolMode === "rotate" ? "rotate composite clip" : toolMode === "scale" ? "scale composite clip" : "move composite clip";
+      pushUndo(undoLabel);
+      beginDrag({
+        mode: toolMode === "rotate" ? "composite-rotate" : toolMode === "scale" ? "composite-scale" : "composite-move",
+        x: event.clientX,
+        y: event.clientY,
+        snapshots: selectedClipTransformSnapshots(),
+      });
+      renderFilmstrip();
+      draw();
+      return;
+    }
+    if (toolMode === "select") {
+      if (hit) {
+        if (event.shiftKey) {
+          if (selectedClipIds.has(hit.id)) selectedClipIds.delete(hit.id);
+          else selectedClipIds.add(hit.id);
+        } else if (!selectedClipIds.has(hit.id)) {
+          selectedClipIds = new Set([hit.id]);
+        }
+        beginDrag({
+          mode: "composite-select-or-move",
+          hitId: hit.id,
+          x: event.clientX,
+          y: event.clientY,
+        });
+        renderFilmstrip();
+        draw();
+        return;
+      }
+      beginDrag({
+        mode: "composite-marquee",
+        x: event.clientX,
+        y: event.clientY,
+        start: point,
+        addToSelection: event.shiftKey === true,
+      });
+      return;
+    }
+    if (toolMode === "move" && hit) {
+      if (!selectedClipIds.has(hit.id)) selectedClipIds = new Set([hit.id]);
+      pushUndo("move composite clip");
+      beginDrag({ mode: "composite-move", x: event.clientX, y: event.clientY });
+      renderFilmstrip();
+      draw();
+      return;
+    }
+    if ((toolMode === "rotate" || toolMode === "scale") && (hit || selectedClipIds.size)) {
+      if (hit && !selectedClipIds.has(hit.id)) selectedClipIds = new Set([hit.id]);
+      if (selectedClipIds.size) {
+        pushUndo(toolMode === "rotate" ? "rotate composite clip" : "scale composite clip");
+        beginDrag({
+          mode: toolMode === "rotate" ? "composite-rotate" : "composite-scale",
+          x: event.clientX,
+          y: event.clientY,
+          snapshots: selectedClipTransformSnapshots(),
+        });
+        renderFilmstrip();
+        draw();
+        return;
+      }
+    }
+    beginDrag({ mode: "pan", x: event.clientX, y: event.clientY, viewX: view.x, viewY: view.y });
+    return;
+  }
   if (attackTrailEditor?.pointerDown(event)) {
     els.stage.setPointerCapture(event.pointerId);
     els.stage.classList.add("dragging");
@@ -7783,19 +10812,99 @@ els.stage.addEventListener("pointerdown", (event) => {
     draw();
     return;
   }
-  const attachment = hitTestDirectManipulationAttachment(event);
+  const gizmoHandle = hitTestTransformGizmo(event);
+  if (gizmoHandle) {
+    const attachment = toolMode === "pivot" ? null : selectedFrameAttachment();
+    const point = stagePoint(event);
+    const layout = gizmoLayout();
+    if (toolMode === "pivot") {
+      pushUndo("move transform pivot");
+      if (!authoredTransformPivot() && layout) {
+        setAuthoredTransformPivot(groupPivotLocalFromScreen({ x: layout.originX, y: layout.originY }));
+        markDirty();
+      }
+      beginDrag({
+        mode: "gizmo-pivot",
+        handle: "pivot",
+        x: event.clientX,
+        y: event.clientY,
+        startX: point.x,
+        startY: point.y,
+        layout,
+        attachmentId: "",
+        transform: structuredClone(transformFromAdjustmentInputs()),
+      });
+      draw();
+      return;
+    }
+    pushUndo(toolMode === "rotate" ? "rotate gizmo" : toolMode === "scale" ? "scale gizmo" : "move gizmo");
+    if (!attachment) beginStepAdjustmentEdit();
+    beginDrag({
+      mode: toolMode === "rotate" ? "gizmo-rotate" : toolMode === "scale" ? "gizmo-scale" : "gizmo-move",
+      handle: gizmoHandle,
+      x: event.clientX,
+      y: event.clientY,
+      startX: point.x,
+      startY: point.y,
+      layout,
+      spriteOriginX: Number(layout?.spriteOriginX ?? layout?.originX ?? 0),
+      spriteOriginY: Number(layout?.spriteOriginY ?? layout?.originY ?? 0),
+      attachmentId: attachment?.id || "",
+      transform: structuredClone(attachment
+        ? normalizeAttachmentTransform(attachment.transform)
+        : transformFromAdjustmentInputs()),
+    });
+    draw();
+    return;
+  }
+  const attachment = hitTestAnyFrameAttachment(event) || hitTestDirectManipulationAttachment(event);
   if (attachment) {
     const frameIndex = attachmentFrameIndex(attachment, currentGroup);
     activateFrameAttachmentForEditing(attachment);
-    pushUndo("drag attached image");
-    beginDrag({
-      mode: "attachment",
-      x: event.clientX,
-      y: event.clientY,
-      attachmentId: attachment.id,
-      frameIndex,
-      transform: structuredClone(normalizeAttachmentTransform(attachment.transform)),
-    });
+    if (toolMode === "select" || toolMode === "pivot") {
+      draw();
+      return;
+    }
+    if (toolMode === "move") {
+      pushUndo("drag attached image");
+      beginDrag({
+        mode: "attachment",
+        x: event.clientX,
+        y: event.clientY,
+        attachmentId: attachment.id,
+        frameIndex,
+        transform: structuredClone(normalizeAttachmentTransform(attachment.transform)),
+      });
+      draw();
+      return;
+    }
+    draw();
+    return;
+  }
+  if (hitTestOwnerSprite(event)) {
+    clearFrameAttachmentSelection();
+    if (toolMode === "select" || toolMode === "pivot") {
+      draw();
+      return;
+    }
+    if (toolMode === "move") {
+      const point = stagePoint(event);
+      pushUndo("move sprite");
+      beginStepAdjustmentEdit();
+      beginDrag({
+        mode: "gizmo-move",
+        handle: "center",
+        x: event.clientX,
+        y: event.clientY,
+        startX: point.x,
+        startY: point.y,
+        layout: gizmoLayout(),
+        attachmentId: "",
+        transform: structuredClone(transformFromAdjustmentInputs()),
+      });
+      draw();
+      return;
+    }
     draw();
     return;
   }
@@ -7816,6 +10925,36 @@ els.stage.addEventListener("pointermove", (event) => {
     view.x = drag.viewX + (event.clientX - drag.x) * devicePixelRatio;
     view.y = drag.viewY + (event.clientY - drag.y) * devicePixelRatio;
     draw();
+    return;
+  }
+  if (drag.mode === "composite-marquee") {
+    const point = stagePoint(event);
+    compositeMarqueeRect = {
+      x: Math.min(drag.start.x, point.x),
+      y: Math.min(drag.start.y, point.y),
+      width: Math.abs(point.x - drag.start.x),
+      height: Math.abs(point.y - drag.start.y),
+    };
+    marqueePreviewClipIds = clipsIntersectingScreenRect(compositeMarqueeRect);
+    draw();
+    return;
+  }
+  if (drag.mode === "composite-select-or-move") {
+    if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 4) return;
+    pushUndo("move composite clip");
+    drag.mode = "composite-move";
+  }
+  if (drag.mode === "composite-move") {
+    const dx = (event.clientX - drag.x) * devicePixelRatio;
+    const dy = (event.clientY - drag.y) * devicePixelRatio;
+    moveSelectedClipsByScreenDelta(dx, dy);
+    drag.x = event.clientX;
+    drag.y = event.clientY;
+    draw();
+    return;
+  }
+  if (String(drag.mode || "").startsWith("composite-")) {
+    updateCompositeTimelineDrag(event);
     return;
   }
   const dx = (event.clientX - drag.x) / view.zoom;
@@ -7896,6 +11035,10 @@ els.stage.addEventListener("pointermove", (event) => {
     draw();
     return;
   }
+  if (drag.mode === "gizmo-move" || drag.mode === "gizmo-rotate" || drag.mode === "gizmo-scale") {
+    applyGizmoDelta(drag, event);
+    return;
+  }
   if (drag.mode === "attachment") {
     const attachment = frameImageAttachments.find((entry) => entry.id === drag.attachmentId);
     if (!attachment) return;
@@ -7918,30 +11061,22 @@ els.stage.addEventListener("pointermove", (event) => {
     return;
   }
   drag = null;
-  els.stage.classList.remove("dragging");
+  els.stage.classList.remove("dragging", "panning");
   updateCoordHud();
 });
 
-els.stage.addEventListener("pointerup", () => {
-  attackTrailEditor?.pointerUp();
-  drag = null;
-  els.stage.classList.remove("dragging");
-  updateCoordHud();
+els.stage.addEventListener("pointerup", (event) => {
+  endStagePointerDrag(event);
 });
 
-els.stage.addEventListener("pointercancel", () => {
-  attackTrailEditor?.pointerUp();
-  drag = null;
+els.stage.addEventListener("pointercancel", (event) => {
   pointerStagePoint = null;
-  els.stage.classList.remove("dragging");
-  updateCoordHud();
+  endStagePointerDrag(event);
 });
 
-els.stage.addEventListener("lostpointercapture", () => {
-  attackTrailEditor?.pointerUp();
-  drag = null;
-  els.stage.classList.remove("dragging");
-  updateCoordHud();
+els.stage.addEventListener("lostpointercapture", (event) => {
+  if (!drag) return;
+  endStagePointerDrag(event);
 });
 
 els.stage.addEventListener("pointerleave", () => {
@@ -7953,7 +11088,6 @@ els.stage.addEventListener("pointerleave", () => {
 els.stage.addEventListener("wheel", (event) => {
   event.preventDefault();
   pointerStagePoint = stagePoint(event);
-  if (applySelectedAttachmentWheel(event)) return;
   zoomViewAt(event);
 }, { passive: false });
 
@@ -7964,25 +11098,48 @@ window.addEventListener("keydown", (event) => {
     save().catch((error) => status(t("saveFailed", { message: error.message })));
     return;
   }
-  if (command && ["c", "v"].includes(event.key.toLowerCase()) && frameAttachmentEditingLocked()) {
-    event.preventDefault();
-    event.stopPropagation();
-    status(t("frameAttachmentTrailLocked"));
-    return;
-  }
-  if (command && event.key.toLowerCase() === "c" && copyFrameImageAttachments()) {
-    event.preventDefault();
-    event.stopPropagation();
-    return;
-  }
-  if (command && event.key.toLowerCase() === "v" && pasteFrameImageAttachments()) {
-    event.preventDefault();
-    event.stopPropagation();
-    return;
-  }
   const typing = isTypingTarget(event);
-  const trackingAttachmentKey = (!typing || isNumberInputTarget(event)) && trackAttachmentTransformKey(event, true);
-  if (trackingAttachmentKey && isNumberInputTarget(event)) event.preventDefault();
+  if (!command && !event.altKey && !event.isComposing && (!typing || isNumberInputTarget(event)) && event.key.toLowerCase() === "s" && isCompositeGroup()) {
+    event.preventDefault();
+    splitSelectedCompositeClips();
+    return;
+  }
+  if (command && !event.altKey && !event.isComposing && (!typing || isNumberInputTarget(event))) {
+    const key = event.key.toLowerCase();
+    if (key === "z" && !event.shiftKey) {
+      event.preventDefault();
+      undo();
+      return;
+    }
+    if (key === "y" || (key === "z" && event.shiftKey)) {
+      event.preventDefault();
+      redo();
+      return;
+    }
+    if (key === "c") {
+      event.preventDefault();
+      if (frameAttachmentEditingLocked() && selectedFrameAttachment()) {
+        status(t("frameAttachmentTrailLocked"));
+        return;
+      }
+      copyEditorSelection();
+      return;
+    }
+    if (key === "v") {
+      event.preventDefault();
+      if (frameAttachmentEditingLocked() && (editorClipboard.kind === "attachment" || frameImageAttachmentClipboard.length)) {
+        status(t("frameAttachmentTrailLocked"));
+        return;
+      }
+      pasteEditorSelection();
+      return;
+    }
+    if (key === "d") {
+      event.preventDefault();
+      duplicateSelectedFrame();
+      return;
+    }
+  }
   if (referenceFrame && !command && !event.altKey && !event.isComposing && event.key.toLowerCase() === "h") {
     if (!typing || isNumberInputTarget(event)) {
       event.preventDefault();
@@ -7995,6 +11152,20 @@ window.addEventListener("keydown", (event) => {
     }
   }
   if (typing) return;
+  if ((event.key === "Delete" || event.key === "Backspace") && !command && !event.altKey) {
+    event.preventDefault();
+    deleteEditorSelection();
+    return;
+  }
+  if (!command && !event.altKey && !event.isComposing) {
+    const toolByCode = { KeyQ: "select", KeyW: "move", KeyE: "rotate", KeyR: "scale", KeyO: "pivot" };
+    const nextTool = toolByCode[event.code];
+    if (nextTool) {
+      event.preventDefault();
+      setToolMode(nextTool);
+      return;
+    }
+  }
   if (event.key === " " && els.playPause) {
     event.preventDefault();
     els.playPause.click();
@@ -8002,7 +11173,6 @@ window.addEventListener("keydown", (event) => {
 });
 
 window.addEventListener("keyup", (event) => {
-  trackAttachmentTransformKey(event, false);
   if (event.key.toLowerCase() !== "h") return;
   if (!referenceFrameHiddenByKey) return;
   referenceFrameHiddenByKey = false;
@@ -8011,7 +11181,6 @@ window.addEventListener("keyup", (event) => {
 
 window.addEventListener("blur", () => {
   resetUndoCoalescing();
-  heldAttachmentTransformKeys.clear();
   if (!referenceFrameHiddenByKey) return;
   referenceFrameHiddenByKey = false;
   draw();
@@ -8023,7 +11192,7 @@ window.addEventListener("beforeunload", (event) => {
   event.returnValue = "";
 });
 
-window.addEventListener("resize", resizeCanvas);
+window.addEventListener("resize", () => resizeCanvas({ preserveView: true }));
 attackTrailEditor = new window.AttackTrailEditor({
   ctx,
   projectId: () => activeProjectId(),
@@ -8049,7 +11218,7 @@ attackTrailEditor = new window.AttackTrailEditor({
     playing = false;
     playbackPrimaryGroup = null;
     playbackSecondaryGroup = null;
-    if (els.playPause) els.playPause.textContent = t("play");
+    if (els.playPause) syncPlayPauseButton();
   },
   attachmentEditingLockChanged: (locked) => syncFrameAttachmentEditingLock(locked),
   status: (message) => status(message),
@@ -8063,10 +11232,13 @@ window.XsxbFrameTunerLite = {
     animationId: currentGroup?.animationId || currentGroup?.name || "",
     animationName: currentGroup?.name || currentGroup?.animationId || "",
     groupId: currentGroup?.uiId || "",
-    frameCount: currentGroup?.frames?.length || 0,
+    frameCount: isCompositeGroup()
+      ? Math.max(1, liteExportTimeline().length)
+      : currentGroup?.frames?.length || 0,
     fps: Number(currentGroup?.speed || 12),
     settings: structuredClone(config?.liteSettings || {}),
   }),
+  configRevision: () => config?.configRevision || "",
   timeline: () => liteExportTimeline(),
   audio: (samples) => liteExportAudio(samples),
   renderFrame: (sample, options) => renderLiteExportFrame(sample, options),
@@ -8077,7 +11249,7 @@ window.XsxbFrameTunerLite = {
       groupId: group.uiId,
       animationId: group.animationId || group.name,
       name: group.name,
-      frameCount: group.frames?.length || 0,
+      frameCount: isCompositeGroup(group) ? 1 : group.frames?.length || 0,
     })),
   selectGroup: async (groupId) => {
     const group = (config?.groups || []).find((entry) => entry.uiId === groupId);
@@ -8087,7 +11259,7 @@ window.XsxbFrameTunerLite = {
   },
   profiles: () => (config?.profiles || []).map((profile) => ({ id: profile.id, label: profile.label || profile.id })),
   profileActorGroups: (profileId) => (config?.groups || [])
-    .filter((group) => group.profileId === profileId && group.type !== "vfx" && !group.previewOwner)
+    .filter((group) => group.profileId === profileId && group.type !== "vfx" && !group.previewOwner && !isCompositeGroup(group))
     .map((group) => ({
       animationId: group.animationId || group.name,
       name: group.name,
@@ -8124,6 +11296,9 @@ requestAnimationFrame(animate);
 applyUiTheme();
 applyCanvasColor();
 applyLanguage();
+setToolMode(toolMode);
+setEditorMode(editorMode, { silent: true });
+setupWorkspaceSplits();
 loadConfig()
   .then(() => {
     resizeCanvas();

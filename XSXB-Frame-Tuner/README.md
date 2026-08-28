@@ -1,28 +1,63 @@
-# XSXB Frame Tuner
+# FrameDock
 
-XSXB Frame Tuner 是一个给 Godot 帧动画角色和 Codex 宠物用的本地调参工作台，配套一个 Codex/Agent skill。它让 Agent 负责导入、同步和验证素材，让人在网页里直观看帧、拖动角色、调碰撞框；Godot 动画保存回游戏项目，Codex 自定义宠物保存回宠物图集。
+FrameDock 是本地序列帧工作台：给 Godot / Unity 角色调参、给 Codex 宠物回写图集，也给不绑游戏的素材做透明导出。Agent 负责导入、同步和验证；人在浏览器里看帧、叠图层、剪时间线、调碰撞框。配套 Codex/Agent skill 的 id 仍是 `xsxb-frame-tuner`。
 
-仓库同时提供完全隔离的 **Frame Tuner Lite**：不绑定任何游戏，专门把 PNG 序列或带 JSON 的 Sprite Sheet 处理成统一透明画布的多图层序列帧和新 Sprite Sheet。
+仓库同时提供完全隔离的 **FrameDock Lite**：不绑定任何游戏工程，把 PNG 序列或带 JSON 的 Sprite Sheet 编成统一透明画布的多图层序列，并导出新的 PNG / Sheet。
 
-![XSXB Frame Tuner 截图](docs/screenshot.png)
+![FrameDock 截图](docs/screenshot.png)
 
-## 功能
+## 两个版本
 
-- 多项目隔离：每个 Godot 项目使用独立的 manifest、tuning、音频绑定、图片挂件和导入素材目录。
-- Codex 宠物项目：自动收集当前 Codex 版本的内置宠物和 `~/.codex/pets` 下的自定义宠物，同时支持 8×9 的 v1 图集和带 16 个视线方向帧的 8×11 v2 图集。
-- 宠物导入与回写：可直接导入合规 WebP 作为新宠物；自定义宠物保存时回写 `spritesheet.webp` 并保留 `spritesheet.xsxb-backup.webp`，内置宠物保持只读。
-- 一句话批量导入：Agent 可以把同一条消息里的多组 PNG 动画作为一个批次导入到同一角色，并统一核对组数和帧数。
-- 帧动画预览：支持逐帧选择、播放、暂停、参考帧、黑/白/透明背景和网格坐标。
-- 胶片条序列编辑：用卡片上方 `⋮⋮` 手柄拖动调整帧顺序，用 `×` 删除单帧（需确认，至少留一帧），用 `+` 在右侧插入空白透明 PNG。图层上下仍用卡片竖向拖动，不要拿主缩略图排帧。Codex 宠物不提供这些操作。
-- 三层变换：角色级、动画组级、单帧级分别保存缩放、偏移、旋转和禁用状态。
-- 碰撞框调节：支持 hurtbox、hitbox、collisionbox，在画布中直接拖动和变形。
-- 播放调节：支持组级时长、单帧时长、禁用帧，以及调参后的实际播放节奏。
-- 帧音效和图片挂件：可以给指定帧绑定 SFX 或附加图片，保存后同步到 Godot 项目。
-- 攻击拖尾模式：先用棍子绘制与动作绑定的完整轨迹，再给需要的人物帧插入可直接拖动首尾的静态拖尾。
-- Godot 同步：导入 PNG 序列或 SpriteFrames 后，会生成/刷新 `res://xsxb_frame_tuner/` 下的运行时数据和基础 runtime。
-- 完整验证：可检查每帧框体、游戏本地数据、SFX、附加帧、场景系数、框体缩放和实际 gameplay 接线。
+| | **完整版** | **Lite** |
+|---|---|---|
+| 启动 | `start_xsxb_frame_tuner.bat` 或 `npm start` | `start_xsxb_frame_tuner_lite.bat` 或 `npm run start:lite` |
+| 地址 | http://127.0.0.1:5179 | http://127.0.0.1:5180 |
+| 项目 | 绑定一个 Godot（`project.godot`）或 Unity（`Assets/` + `ProjectSettings`）根目录 | 独立素材项目，可 `XSXB_LITE_ROOT` 指向外部数据盘 |
+| 编辑 | 胶片条、组合时间线、QWER、Photopea、碰撞框、音效、挂件、攻击拖尾 | 同一套编辑器，含组合时间线与导出 |
+| 输出 | 保存后同步 Godot / Unity runtime | 用户自选目录导出透明 PNG 或 Sheet + JSON |
+| 不做 | — | 不改完整版项目列表，不同步游戏工程 |
 
-这个仓库不包含任何角色 PNG、音频、Godot 私有项目路径或调参数据。运行时产生的项目数据会留在本机，并被 `.gitignore` 排除。
+两边共用同一份网页编辑器。Codex 宠物只出现在完整版，且隐藏组合时间线、序列增删、打开游戏工程和 Photopea 写回。
+
+## 能做什么
+
+- **多项目隔离**：每个游戏工程（或 Lite 素材根）使用独立的 manifest、tuning、音频、挂件和导入目录。侧栏「打开项目」浏览本机文件夹；完整版绑定 Godot / Unity 根，Lite 可新建或发现 `data/lite/projects/<id>`。
+- **组合时间线**：把多条序列帧（角色 + 特效）叠在同一毫秒时间线上预览和导出。交互对照 [OpenCut classic](https://github.com/OpenCut-app/opencut-classic)（缩放、磁铁、分割、实时拖裁），素材仍是序列帧，不是视频。不嵌入 React OpenCut。
+- **胶片条**：卡片上方 `⋮⋮` 重排帧序，`×` 删除（需确认，至少留一帧），`+` 插入空白透明 PNG。图层上下仍用竖向拖动，不要拖主缩略图排帧。
+- **画布 QWER**：Q 选择、W 移动、E 旋转、R 缩放；O 拖变换枢轴。中键只平移；右键菜单。Ctrl+Z/Y 撤销重做，Ctrl+C/V/D 复制粘贴/复制一份，Delete 删除。
+- **Photopea**：把当前帧主图和附加层作为未变换源 PNG 送进编辑，写回只换像素，不叠 Tuner 里已有的缩放/偏移。
+- **三层变换**：角色、动画组、单帧分别保存缩放、偏移、旋转和禁用。
+- **碰撞框**：hurtbox / hitbox / collisionbox，画布上直接拖变形。
+- **帧音效与图片挂件**：绑到指定帧；完整版保存后同步到游戏项目，Lite 随导出包带走。
+- **攻击拖尾**：棍子画轨迹，再按人物帧插入可拖首尾的静态拖尾。
+- **Codex 宠物**：自动收集内置宠物和 `~/.codex/pets` 自定义宠物；支持 8×9 的 v1 图集和带 16 个视线方向的 v2 图集。自定义宠物保存回 `spritesheet.webp` 并保留备份；内置宠物只读。
+- **Godot / Unity runtime**：导入后生成引擎侧数据和播放器；游戏工程不直接播放组合时间线的 clip 列表，只播放烘焙后的普通序列。
+
+这个仓库不包含角色 PNG、音频、游戏工程路径或调参数据。运行时项目数据留在本机，并被 `.gitignore` 排除。
+
+## 组合时间线
+
+组合序列（`group.kind = "composite"`）和「附加图层」不是同一件事。时间线里的每一段 clip 只**引用**已有序列，按毫秒叠在舞台上一起播。加入一条序列默认新建一层；同一轨也可以左右并排放不重叠的 clip。后面的轨道画在前面。
+
+**怎么建**
+
+- 大纲：**基于此素材新建组合序列** / **新建组合序列**
+- Lite 导入面板还可：**新建组合序列（空时间线）**
+- 把 PNG 文件夹拖到组合画布或时间线上，会先导入再加 clip
+- **加入时间线** 列出项目里所有普通序列（按素材集分组，当前集优先），包括特效包
+
+**怎么剪**
+
+- 胶片条区域变成多轨 NLE：工具条（分割 / 复制 / 复制一份 / 删除 / 磁铁 / 缩放）、毫秒标尺、播放头
+- Ctrl+滚轮以光标为锚缩放；Shift 或横向滚轮平移
+- 拖 clip 改开始时间或换轨；拖到最后一行下面新建图层；拖两端按源帧边界裁切
+- 拖轨道手柄改前后；眼睛隐藏整轨；右键可隐藏选中 clip
+- **S** 或剪刀在播放头处切开（Ctrl+S 仍是保存）
+- 隐藏的 clip / 轨道不进预览，也不进烘焙
+
+**导出时发生什么**
+
+保存（完整版）和 Lite 的 PNG / Sheet 导出会把时间线**烘焙成一条普通 PNG 序列**。Godot / Unity 只播这条烘焙结果。不要嵌套组合；框体、音效、拖尾仍写在源序列上，采样到那一帧时画进预览和烘焙图。
 
 ## 攻击拖尾模式
 
@@ -47,14 +82,21 @@ README 会直接播放上方的轻量动态预览；点击动画可打开完整 
 
 仓库根目录提供两个可直接双击的入口：
 
-- `start_xsxb_frame_tuner.bat`：启动正式版并打开 `http://127.0.0.1:5179`。
-- `start_xsxb_frame_tuner_lite.bat`：启动 Lite 版并打开 `http://127.0.0.1:5180`。
+- `start_xsxb_frame_tuner.bat`：启动完整版并打开 `http://127.0.0.1:5179`
+- `start_xsxb_frame_tuner_lite.bat`：启动 Lite 并打开 `http://127.0.0.1:5180`
 
-两个入口会先关闭本仓库已运行的另一种 Tuner 模式，因此正式版和 Lite 不会在后台重复占用服务。Windows 快捷方式可以直接指向对应 BAT，并复用 `tools/animation_tuner/assets/xsxb-frame-tuner.ico` 作为图标。
+两个入口会先关闭本仓库已运行的另一种 Tuner 模式，因此完整版和 Lite 不会在后台重复占用服务。Windows 快捷方式可以直接指向对应 BAT，并复用 `tools/animation_tuner/assets/xsxb-frame-tuner.ico` 作为图标。
+
+需要指定 Lite 数据根时，在启动前设置 `XSXB_LITE_ROOT`（不要从页面里改这个路径）：
+
+```powershell
+$env:XSXB_LITE_ROOT = "D:\path\to\xsxb-lite"
+npm run start:lite
+```
 
 ## Unity runtime integration
 
-Frame Tuner project bindings support `godot`, `unity`, `frame_lite`, and `codex_pets`. A Unity binding is isolated by its exact project root while it can deliberately share the same engine-neutral manifest and tuning data with the original Godot binding during migration.
+FrameDock project bindings support `godot`, `unity`, `frame_lite`, and `codex_pets`. A Unity binding is isolated by its exact project root while it can deliberately share the same engine-neutral manifest and tuning data with the original Godot binding during migration.
 
 Saving a Unity project copies all runtime assets into stable Unity-owned paths:
 
@@ -69,7 +111,7 @@ Assets/XSXBFrameTuner/Runtime/
 
 `xsxb_runtime_data.json` is a derived Unity adapter over the existing authoritative `animation_manifest.json`, `animation_tuning.json`, frame SFX, attachments, and attack-trail JSON. It resolves real per-frame durations, disabled frames, transforms, facing, boxes, and stable Unity asset paths. `XsxbRuntimeImporter` automatically creates `xsxb_runtime_data.asset` after script reload and can also be run from **Tools > XSXB > Rebuild Runtime Databases**.
 
-Attach `XsxbFramePlayer` to a Unity actor and assign the generated database. Replaying the same looping animation is idempotent; one-shot actions use `Play(animationId, false, true)` or `RestartAnimation()`. Gameplay can query `GetAnimationDurationSeconds()`, current hit/hurt/collision boxes, and the animation-finished event. Attack-trail data and timing are exposed through `IXsxbAttackTrailConsumer`; a project-specific Unity mesh/shader consumer is still required for final trail rendering.
+Attach `XsxbFramePlayer` to a Unity actor and assign the generated database. Replaying the same looping animation is idempotent; one-shot actions use `Play(animationId, false, true)` or `RestartAnimation()`. Gameplay can query `GetAnimationDurationSeconds()`, current hit/hurt/collision boxes, and the animation-finished event. Attack-trail data and timing are exposed through `IXsxbAttackTrailConsumer`; a project-specific Unity mesh/shader consumer is still required for final trail rendering. Composite timelines are baked to ordinary frame sequences before Unity sees them.
 
 Validation commands:
 
@@ -78,9 +120,9 @@ npm run validate:unity -- --project <unity_project_id>
 npm run smoke:unity
 ```
 
-## Frame Tuner Lite
+## FrameDock Lite
 
-Lite 版与完整 Tuner 共用编辑器和攻击拖尾能力，但使用独立服务、独立项目列表和独立数据目录，不会修改 Godot 项目，也不会改变完整 Tuner 当前选中的项目。角色/动画/单帧变换、真实帧时长、disabled frame、碰撞框元数据、图片图层、逐帧音效与攻击拖尾都可照常编辑保存；胶片条同样可以重排、删除和插入空白帧。只有 Godot runtime 与游戏绑定明确关闭。
+Lite 与完整版共用编辑器、组合时间线、QWER 和攻击拖尾，但使用独立服务、独立项目列表和独立数据目录，不会修改 Godot / Unity 工程，也不会改变完整版当前选中的项目。侧栏可以「新建项目」或「打开项目」登记当前 Lite 根下 `data/lite/projects/<id>` 里的素材文件夹；不能从页面切换另一套 `XSXB_LITE_ROOT`。
 
 Agent 可导入两类材料：
 
@@ -98,7 +140,7 @@ node tools\frame_tuner_lite\import_sheet.js --project demo --profile character -
 node tools\frame_tuner_lite\import_frames.js --project demo --profile character --animation weapon_glow --source "D:\frames\glow" --fps 12 --attach-to attack --layer behind
 ```
 
-启动地址与完整 Tuner 分开：
+启动：
 
 ```powershell
 npm run start:lite
@@ -107,7 +149,13 @@ npm run start:lite
 
 Windows 下也可以直接双击仓库根目录的 `start_xsxb_frame_tuner_lite.bat`。
 
-导入阶段不要求用户预先决定统一画布。先在页面里校准当前角色的所有动作、图层、逐帧音效和拖尾；“透明序列导出”会扫描该角色全部主动作组的实际可见像素范围，加入可调透明边距，再自动得到一个不会裁切且尽量紧凑的全角色统一画布。所有动作共享这个尺寸和同一个角色原点，切换动作时不会跳位。Lite 中的拖尾棍子只负责绘制空间轨迹，只有在“拖尾插入”中明确加入当前人物帧的拖尾范围才会显示和导出。每张可播放源帧始终只生成一张最终烘焙帧，主帧、附加帧和该帧拖尾会合成到同一张透明 PNG。把音频文件拖到帧卡即可绑定并预览，点击帧卡上的喇叭可以删除。点击任一导出按钮都会先打开系统文件夹选择器，不会写入固定的 Lite 内部路径。“导出 PNG 序列”为当前角色的每个主动作分别写逐帧透明 PNG，并用 `export.json` 作为唯一描述文件；“导出 Sheet + JSON”为每个主动作只写 `spritesheet.png` 和可被 Lite 重新导入的 `spritesheet.json`，不再生成重复的 `export.json`。批次根目录还会写一份 `lite-export.json`。Sheet 的帧时长、源帧映射和音效都以 `spritesheet.json` 为唯一权威。附属图层会合成进所属主动作，不会被重复导出成另一组。两种导出都会把实际使用的音频复制到批次根目录的 `audio/`。要继续改已经导出的资产，在「导入素材」里将来源选成「Lite 导出包（反向导入）」，选择那次导出的批次文件夹（不要只选某一个动作子目录），即可把各组 Sheet/序列、音效和画布导回编辑器。因为导出图已经烘焙过变换，建议新建素材集导入，避免叠加上旧的角色/组偏移。Agent 再次导入 Sheet 时也会从 `spritesheet.json` 恢复音频文件和帧卡绑定。
+导入阶段不要求用户预先决定统一画布。先在页面里校准当前角色的所有动作、图层、组合时间线、逐帧音效和拖尾；“透明序列导出”会扫描该角色全部主动作组的实际可见像素范围，加入可调透明边距，再自动得到一个不会裁切且尽量紧凑的全角色统一画布。所有动作共享这个尺寸和同一个角色原点，切换动作时不会跳位。
+
+Lite 中的拖尾棍子只负责绘制空间轨迹，只有在“拖尾插入”中明确加入当前人物帧的拖尾范围才会显示和导出。每张可播放源帧始终只生成一张最终烘焙帧，主帧、附加帧和该帧拖尾会合成到同一张透明 PNG。组合序列在导出时按毫秒采样重叠 clip，同样烘焙成一条普通序列，不要把源素材组再导出一遍（除非它们自己是没有 `previewOwner` 的主动作）。
+
+把音频文件拖到帧卡即可绑定并预览，点击帧卡上的喇叭可以删除。点击任一导出按钮都会先打开系统文件夹选择器，不会写入固定的 Lite 内部路径。“导出 PNG 序列”为当前角色的每个主动作分别写逐帧透明 PNG，并用 `export.json` 作为唯一描述文件；“导出 Sheet + JSON”为每个主动作只写 `spritesheet.png` 和可被 Lite 重新导入的 `spritesheet.json`，不再生成重复的 `export.json`。批次根目录还会写一份 `lite-export.json`。Sheet 的帧时长、源帧映射和音效都以 `spritesheet.json` 为唯一权威。附属图层会合成进所属主动作，不会被重复导出成另一组。两种导出都会把实际使用的音频复制到批次根目录的 `audio/`。
+
+要继续改已经导出的资产，在「导入素材」里将来源选成「Lite 导出包（反向导入）」，选择那次导出的批次文件夹（不要只选某一个动作子目录），即可把各组 Sheet/序列、音效和画布导回编辑器。因为导出图已经烘焙过变换，建议新建素材集导入，避免叠加上旧的角色/组偏移。Agent 再次导入 Sheet 时也会从 `spritesheet.json` 恢复音频文件和帧卡绑定。
 
 Lite 本地数据保存在：
 
@@ -116,19 +164,19 @@ data/lite/projects/<project_id>/
 workspace/lite/projects/<project_id>/assets/
 ```
 
-这些目录均被 Git 忽略，不包含用户项目路径。导出文件保存在用户通过系统选择器指定的目录。完整 Agent 导入与验收约定见 `skills/xsxb-frame-tuner/references/lite-contract.md`。
+这些目录均被 Git 忽略。导出文件保存在用户通过系统选择器指定的目录。完整 Agent 导入与验收约定见 `skills/xsxb-frame-tuner/references/lite-contract.md`。
 
 ## 仓库内容
 
-- `tools/animation_tuner/`：本地 Webapp，默认服务地址是 `http://127.0.0.1:5179`。
-- `tools/frame_tuner_lite/`：非游戏绑定的序列帧导入、独立服务与透明导出工具，默认服务地址是 `http://127.0.0.1:5180`。
-- `tools/import_frames.js`：Agent 用来导入 PNG 序列的内部工具。
-- `tools/import_batch.js`：Agent 用来一次导入多组 PNG 动画的内部工具。
-- `tools/import_spriteframes.js`：Agent 用来从 Godot `.spriteframes.tres` 导入动画的内部工具。
-- `tools/validate_import.js`：验证独立 tuner 与 Godot 项目的完整接线结果。
-- `tools/godot_sync.js` 和 `tools/godot_runtime.js`：把调参数据、素材和 runtime 同步到 Godot 项目。
-- `skills/xsxb-frame-tuner/`：配套 Codex/Agent skill。
-- `data/`、`workspace/`、`audio/`：本地运行时目录。真实项目数据不提交。
+- `tools/animation_tuner/`：本地 Webapp（完整版默认 `http://127.0.0.1:5179`）
+- `tools/animation_tuner/public/composite_timeline.js`：组合时间线视图（OpenCut 式缩放 / 磁铁 / 分割）
+- `tools/animation_tuner/public/composite_sequence.js`：clip / track / 烘焙数据模型
+- `tools/frame_tuner_lite/`：Lite 导入、独立服务与透明导出（默认 `http://127.0.0.1:5180`）
+- `tools/import_frames.js` / `import_batch.js` / `import_spriteframes.js`：Agent 导入工具
+- `tools/validate_import.js`：验证独立 tuner 与游戏工程的接线
+- `tools/godot_sync.js`、`tools/godot_runtime.js`、`tools/unity_runtime.js`：引擎同步
+- `skills/xsxb-frame-tuner/`：配套 Codex/Agent skill
+- `data/`、`workspace/`、`audio/`：本机运行时目录，不提交
 
 ## 安装方式
 
@@ -136,8 +184,8 @@ workspace/lite/projects/<project_id>/assets/
 
 ```text
 请从 https://github.com/sparklecatta-lang/XSXB-Frame-Tuner 安装并启用 `skills/xsxb-frame-tuner`。
-安装后把仓库克隆到本机作为 XSXB Frame Tuner 工具根目录。
-以后处理 Godot 帧动画角色导入、动画追加、碰撞框调参、音效/挂件同步时，默认使用 `$xsxb-frame-tuner`。
+安装后把仓库克隆到本机作为 FrameDock 工具根目录。
+以后处理 Godot 帧动画角色导入、动画追加、组合时间线、碰撞框调参、音效/挂件同步时，默认使用 `$xsxb-frame-tuner`。
 ```
 
 ## 使用方式
@@ -157,16 +205,20 @@ workspace/lite/projects/<project_id>/assets/
 ```
 
 ```text
+用 $xsxb-frame-tuner 把这几个特效 PNG 文件夹叠进当前角色的组合时间线，导出烘焙序列。
+```
+
+```text
 用 $xsxb-frame-tuner 检查当前 Godot 项目的 XSXB runtime 是否和 tuner 保存的数据一致。
 ```
 
 启动 Tuner 后，项目列表中的“Codex 宠物”会自动显示本机内置及自定义宠物。外部用 Hatch Pet 新建宠物后点击“刷新动画列表”即可看到；也可以点“导入新宠物”加入一个 1536×1872（v1）或 1536×2288（v2）的 WebP 图集。
 
-Agent 会负责选择/创建 XSXB 项目、批量复制帧素材、生成 manifest、逐组检查初始框体、同步完整 runtime 到 Godot、连接实际 gameplay，并在验证通过后启动 Webapp。打开页面后，人可以继续做艺术性微调并点击保存。
+Agent 会负责选择/创建项目、批量复制帧素材、生成 manifest、逐组检查初始框体、同步完整 runtime 到游戏工程、连接实际 gameplay，并在验证通过后启动 Webapp。打开页面后，人可以继续做艺术性微调并点击保存。
 
 ## 本地数据
 
-本机生成的数据默认放在这些位置：
+完整版默认：
 
 ```text
 data/projects/<project_id>/
@@ -174,11 +226,18 @@ workspace/projects/<project_id>/assets/
 audio/projects/<project_id>/
 ```
 
+Lite 默认：
+
+```text
+data/lite/projects/<project_id>/
+workspace/lite/projects/<project_id>/assets/
+```
+
 这些目录会保存项目绑定、导入帧、attachments、音效和调参结果。它们默认不会进入 Git 仓库。
 
 ## 维护验证
 
-代码没有外部运行依赖，只需要 Node.js。维护者可以让 Agent 执行项目检查，检查内容等价于：
+代码没有外部运行依赖，只需要 Node.js 18+。维护者可以让 Agent 执行：
 
 ```powershell
 npm run check
@@ -191,6 +250,8 @@ npm run validate:lite -- --project <lite_project_id>
 ```powershell
 node tools\validate_import.js --project <xsxb_project_id> --project-root "<Godot项目路径>" --require-gameplay --strict
 ```
+
+改网页 UI 或保存结构时，同时更新 `skills/xsxb-frame-tuner/references/ui-contract.md`（以及 Lite 的 `lite-contract.md`）。
 
 ## 自动更新
 

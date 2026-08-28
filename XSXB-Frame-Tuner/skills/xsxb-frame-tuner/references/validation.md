@@ -62,6 +62,7 @@ For each case, confirm:
 - Gameplay movement collision consumes runtime collisionbox.
 - Gameplay attack resolution consumes runtime hitbox and hurtbox.
 - Source facing matches the inspected art.
+- Composite groups (`kind: composite`) are not consumed as clip lists by Godot or Unity. Save/export must bake them to an ordinary frame sequence first; runtime playback of that baked animation is the completion check.
 
 ## SFX and Attachment Gate
 
