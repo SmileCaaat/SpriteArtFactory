@@ -16,8 +16,10 @@ set "SPRITE_VIDEO_LAB_WORK_DIR=%AI_ROOT%\work"
 set "SPRITE_VIDEO_LAB_REALESRGAN_BIN=%AI_ROOT%\work\tools\realesrgan-ncnn-vulkan\realesrgan-ncnn-vulkan.exe"
 set "SPRITE_VIDEO_LAB_REALESRGAN_MODEL_DIR=%AI_ROOT%\work\tools\realesrgan-ncnn-vulkan\models"
 
-rem Prefer ffmpeg/ffprobe on PATH (WinGet / scoop / system). Optional override:
-rem set "SPRITE_VIDEO_LAB_FFMPEG_DIR=C:\path\to\ffmpeg\bin"
+rem Bundled ffmpeg lives in SpriteArtFactory/tools/ffmpeg/bin (relative to repo root).
+set "BUNDLED_FFMPEG=%~dp0..\tools\ffmpeg\bin"
+if not exist "%BUNDLED_FFMPEG%\ffprobe.exe" call "%~dp0..\scripts\setup_ffmpeg.bat"
+if "%SPRITE_VIDEO_LAB_FFMPEG_DIR%"=="" set "SPRITE_VIDEO_LAB_FFMPEG_DIR=%BUNDLED_FFMPEG%"
 
 rem Direct Hugging Face access (no local proxy required).
 set "HF_ENDPOINT=https://huggingface.co"
